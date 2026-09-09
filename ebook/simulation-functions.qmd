@@ -1,0 +1,2059 @@
+# Description and Functions {#sec-sim-functions}
+
+
+We simulate data using a modified Belloni data-generating process, in which the treatment assignment depends exclusively on the covariate $X_1$.
+
+Our objective is to compare different propensity score–based estimators of the average treatment effect (ATE), including inverse probability weighting (IPW) and augmented IPW (AIPW). We consider multiple estimation settings:
+
+- Baseline: the estimated propensity score is used directly, without any modification.
+- Calibration: the propensity score is first calibrated and then used to estimate the ATE.
+- Clipping via calibrated range: the propensity score is not calibrated, but its values are clipped using the range implied by the calibrated scores before estimating the ATE.
+
+:::{.callout-note collapse=true}
+
+## Required packages
+
+Some required packages:
+
+```{r load-packages}
+library(tidyverse)
+library(pbapply)
+library(hdm)
+library(randomForest)
+library(xgboost)
+library(sandwich)
+library(philentropy)
+library(parallel)
+library(gmish)
+library(ebal)
+library(MASS)
+library(tikzDevice)
+
+# To install gmish:
+# devtools::install_git("gweissman/gmish")
+```
+
+:::
+
+
+## Data Generating Process
+
+
+
+We consider the simulation design introduced in Appendix~P of @Belloni_2017_Econometrica.
+Let $n$ denote the sample size and $p$ the dimension of the covariate vector.
+For each observation $i=1,\dots,n$, data are generated as follows.
+
+
+
+The covariate vector $X_i \in \mathbb{R}^p$ is drawn as
+$$
+X_i \sim \mathcal{N}(0,\Sigma),
+\qquad
+\Sigma_{jk} = \rho^{|j-k|}, \quad j,k=1,\dots,p,
+$$
+with $\rho=0.5$.
+
+For the coefficient sequence, define the sparse coefficient vector $\theta_0 \in \mathbb{R}^p$ by
+$$
+(\theta_0)_j = \frac{1}{j^2}, \qquad j=1,\dots,p.
+$$
+Let
+$$
+Q = \theta_0^\top \Sigma \theta_0.
+$$
+
+We use scaling parameters. For $R_d^2, R_y^2 \in \{0,0.1,\dots,0.9\}$, define
+$$
+c_d = 
+\begin{cases}
+0, & R_d^2 = 0, \\[4pt]
+\sqrt{\dfrac{(\pi^2/3) R_d^2}{(1-R_d^2)\,Q}}, & R_d^2 > 0,
+\end{cases}
+\qquad
+c_y =
+\begin{cases}
+0, & R_y^2 = 0, \\[4pt]
+\sqrt{\dfrac{R_y^2}{(1-R_y^2)\,Q}}, & R_y^2 > 0.
+\end{cases}
+$$
+
+
+Let us turn to the treatment assignment. Let $\nu_i \sim \mathcal{U}(0,1)$ independently and define the propensity score
+$$
+m_0(X_i)
+= \Pr(D_i=1 \mid X_i)
+= \frac{\exp\!\left(X_i^\top (c_d \theta_0)\right)}
+       {1 + \exp\!\left(X_i^\top (c_d \theta_0)\right)}.
+$$
+The treatment indicator is generated as
+$$
+D_i = \mathbb{1}\!\left\{ m_0(X_i) > \nu_i \right\}.
+$$
+
+For the outcome equation, in the original design of @Belloni_2017_Econometrica., the outcome is given by
+$$
+Y_i = D_i \, X_i^\top (c_y \theta_0) + \zeta_i,
+\qquad
+\zeta_i \sim \mathcal{N}(0,1),
+$$
+with $\zeta_i$ independent of $(X_i,D_i)$.
+
+In our simulations, we modify the outcome equation to isolate treatment effect heterogeneity along the first covariate. Specifically, we define
+$$
+\tau(X_i) = X_{i1} \, (c_y \theta_{0,1}),
+\qquad
+g(X_i) = X_i^\top (c_y \theta_0),
+$$
+and generate outcomes as
+$$
+Y_i = g(X_i) + D_i \, \tau(X_i) + \zeta_i,
+\qquad
+\zeta_i \sim \mathcal{N}(0,1).
+$$
+Hence, while the baseline outcome depends on all covariates, **the treatment effect
+depends exclusively on $X_{i1}$**.
+
+The average treatment effect (ATE) is
+$$
+\text{ATE} = \mathbb{E}[\tau(X)] = \mathbb{E}[X_1 \, (c_y \theta_{0,1})],
+$$
+and is approximated in simulations by
+$$
+\widehat{\text{ATE}}_{\text{true}} = \frac{1}{n} \sum_{i=1}^n \tau(X_i).
+$$
+
+
+### Estimators of the Average Treatment Effect
+
+To estimate the average treatment effect, we consider several inverse-probability–based estimators that differ in their use of outcome regression adjustment, weight normalization, and choice of reference outcome. 
+
+Specifically, we report results for:
+
+* the classical inverse probability weighting (IPW) estimator;
+* the classical augmented inverse probability weighting (AIPW) estimator;
+* IPW and AIPW estimators with normalized weights;
+* IPW and AIPW estimators constructed using the equilibrium outcome as the reference outcome.
+
+Let $\hat p(1,X_i)$ denote an estimate of the propensity score.
+
+#### Classical IPW and AIPW estimators
+
+The standard IPW and AIPW estimators of the ATE are given by
+$$
+\begin{align}
+  \widehat{\text{ATT}}_{ipw}
+  & = \frac{1}{n_1} \sum_{i=1}^n Y^\text{obs}_i 
+  \left[ \frac{D_i-\hat{p}(1, X_i)}{1-\hat{p}(1, X_i)} \right] \\
+  \widehat{\text{ATT}}_{aipw}
+  & = \frac{1}{n_1} \sum_{i=1}^n \left( Y^\text{obs}_i - \hat g(0,X) \right)
+  \left[ \frac{D_i-\hat{p}(1, X_i)}{1-\hat{p}(1, X_i)} \right]
+\end{align}
+$$
+where $n_1=\sum_{i=1}^n D_i$ and $n_0=\sum_{i=1}^n (1-D_i)$.
+
+Both estimators require a common support condition to ensure that propensity scores are bounded away from 0 and 1.
+
+
+#### Normalized IPW and AIPW estimators
+
+To improve finite-sample performance, particularly when overlap is limited, we also consider normalized versions of the IPW and AIPW estimators. These estimators replace raw inverse-probability weights with weights that sum to one within each treatment group.
+
+
+The normalized IPW estimator of the ATE is
+$$
+\begin{align}
+\widehat{\text{ATE}}_{ipwn}
+&= \sum_{i=1}^n Y_i^{\text{obs}} \left( w_i^{(1)} - w_i^{(0)} \right),
+\end{align}
+$$
+
+
+where
+$$
+\begin{align}
+w_i^{(1)} &= \frac{D_i / \hat p(1,X_i)}{\sum_{j=1}^n D_j / \hat p(1,X_j)},
+&
+w_i^{(0)} &= \frac{(1-D_i) / (1-\hat p(1,X_i))}{\sum_{j=1}^n (1-D_j) / (1-\hat p(1,X_j))}.
+\end{align}
+$$
+The normalized AIPW estimator is defined as
+$$
+\begin{align}
+  \widehat{\text{ATE}}_{aipwn}
+  & = \sum_{i=1}^n
+  \left[
+  \hat g(1,X_i) - \hat g(0,X_i) w_i^{(1)} \bigl( Y_i^{\text{obs}} - \hat g(1,X_i) \bigr) - w_i^{(0)} \bigl( Y_i^{\text{obs}} - \hat g(0,X_i) \bigr)
+  \right].
+\end{align}
+$$
+
+#### Estimators using the equilibrium outcome as reference
+
+Finally, we also consider IPW and AIPW estimators constructed using the equilibrium outcome as the reference outcome. In this case, the unexplained component of the outcome difference combines deviations from the equilibrium outcome for both treated and untreated units. The corresponding estimators are implemented by replacing (\hat g(0,X_i)) with the equilibrium outcome regression (\hat g^{\text{eq}}(X_i)) in the expressions above.
+
+The inverse probability weighting (IPW) estimator is
+$$
+\begin{align}
+  \hat{\delta}_{\text{eqb}}^{\text{ipw}}
+  = \left(\frac{1}{n_1} + \frac{1}{n_0}\right)
+  \sum_{i=1}^n Y_i^{\text{obs}}
+  \left[D_i - \hat p(1, X_i)\right],
+\end{align}
+$$
+
+and the augmented inverse probability weighting (AIPW) estimator is
+$$
+\begin{align}
+  \hat{\delta}_{\text{eqb}}^{\text{aipw}}
+  =
+  \left(\frac{1}{n_1}+\frac{1}{n_0}\right)
+  \sum_{i=1}^n\left(
+  Y_i^{\text{obs}} - \hat g(2, X_i)
+  \right)
+  \left[
+  D_i - \hat p(1, X_i)
+  \right].
+\end{align}
+$$
+
+
+```{r define-gen_data_belloni}
+#| code-fold: true
+#| code-summary: The `gen_data_belloni()`{.R} function to generate data, and the `format_data_belloni()`{.R} function to format it as a tibble.
+#' Generate Synthetic Data (Belloni et al. 2017 modified)
+#'
+#' @param n Number of observations to generate.
+#' @param p Number of predictors.
+#' @param Rd2 Value for \exp{R^2_d \in \{0, .1, .2, .3, .4, .5, .6, .7, .8, .9\}}.
+#' @param Ry2 Value for \exp{R^2_y \in \{0, .1, .2, .3, .4, .5, .6, .7, .8, .9\}}.
+#' @param rho Value for controlling the correlation between predictors, i.e.,
+#'  value of \exp{\rho} in \exp{\Sigma_{kj} = (\rho)^{|j-k|}}. Default to 0.5.
+#' @param seed If provided, seed to use for pseudo-random generation.
+#'
+#' @returns A list containing the generated simulation data and ground truth parameters:
+#' * `y`: Numeric vector of observed outcomes \exp{Y_i}.
+#' * `m_0`: Numeric vector of true propensity scores \exp{m_0(X_i) = \Pr(D_i=1 \mid X_i)}.
+#' * `d`: Integer vector of binary treatment indicators \exp{D_i \in \{0, 1\}}.
+#' * `X`: Numeric matrix of size n x p containing covariate values.
+#' * `nu`: Numeric vector of independent standard uniform draws \exp{\nu_i \sim \mathcal{U}(0,1)} used for treatment assignment.
+#' * `zeta`: Numeric vector of outcome regression noise draws \exp{\zeta_i \sim \mathcal{N}(0,1)}.
+#' * `theta0`: Numeric vector of length p containing the sparse sequence coefficients \exp{\theta_{0,j} = 1/j^2}.
+#' * `Sigma`: Covariance matrix of size p x p with entry \exp{\Sigma_{jk} = \rho^{|j-k|}}.
+#' * `cd`: Numeric scaling constant \exp{c_d} derived from \exp{R^2_d}.
+#' * `cy`: Numeric scaling constant \exp{c_y} derived from \exp{R^2_y}.
+#' * `Rd2`: Numeric value specifying the input \exp{R^2_d}.
+#' * `Ry2`: Numeric value specifying the input \exp{R^2_y}.
+#' * `rho`: Numeric auto-regressive parameter \exp{\rho} for the covariate covariance matrix.
+#' * `quad`: Numeric scalar representing the quadratic form \exp{Q = \theta_0^\top \Sigma \theta_0}.
+#' * `ate_true`: Numeric value of the sample-average true treatment effect \exp{\widehat{\text{ATE}}_{\text{true}} = \frac{1}{n} \sum_{i=1}^n \tau(X_i)}.
+#' * `gate_true`: Numeric vector of true Group Average Treatment Effects (GATEs) averaged across quantile-based bins of \exp{X_1}.
+#'
+#' @references
+#' Belloni, A., Chernozhukov, V., Fernandez-Val, I., and Hansen, C. (2017):
+#' "Supplement to 'Program Evaluation and Causal Inference With High-Dimensional
+#' Data'," Econometrica Supplemental Material, 85,
+#' http://dx.doi.org/10.3982/ECTA12723.
+#'
+#' @md
+#'
+gen_data_belloni <- function(n = 1000,
+                             p = 250,
+                             Rd2 = 0.5,
+                             Ry2 = 0.5,
+                             rho = 0.5,
+                             seed = NULL) {
+
+  if (!is.null(seed)) set.seed(seed)
+
+  # Covariance matrix Sigma_{jk} = rho^{|j-k|}
+  idx <- 1:p
+  Sigma <- rho^abs(outer(idx, idx, "-"))
+
+  # Sparse coefficient vector theta0_j = (1/j)^2
+  theta0 <- matrix((1 / idx)^2, ncol = 1)
+
+  # Draw covariates X ~ N(0, Sigma)
+  X <- MASS::mvrnorm(n = n, mu = rep(0, p), Sigma = Sigma)
+
+  # Scaling constants
+  quad <- as.numeric(t(theta0) %*% Sigma %*% theta0)
+
+  cd <- if (Rd2 == 0) 0 else sqrt(((pi^2 / 3) * Rd2) / ((1 - Rd2) * quad))
+  cy <- if (Ry2 == 0) 0 else sqrt((Ry2) / ((1 - Ry2) * quad))
+
+  # Treatment assignment (Propensity score)
+  beta_d <- cd * theta0
+  lin_d  <- as.numeric(X %*% beta_d)
+  p_d    <- 1 / (1 + exp(-lin_d)) # True logistic probability
+  nu     <- runif(n)
+  d      <- as.integer(p_d > nu)
+
+  # Outcome generation (Modified for CATE on X1)
+  beta_y <- cy * theta0
+  tau_X  <- as.numeric(X[, 1] * beta_y[1])  # Treatment effect depends ONLY on X1
+  g_X    <- as.numeric(X %*% beta_y)        # Main outcome signal
+  zeta   <- rnorm(n)
+
+  y <- g_X + d * tau_X + zeta
+
+  # Quantile-based GATE bins on X1
+  max_grid <- 5
+  grid <- as.numeric(quantile(X[, 1], probs = (0:max_grid) / max_grid, na.rm = TRUE))
+  g_bin <- findInterval(X[, 1], vec = grid, rightmost.closed = TRUE, all.inside = TRUE)
+
+  gate_sums   <- rowsum(tau_X, g_bin, reorder = TRUE)
+  gate_counts <- rowsum(rep(1, length(tau_X)), g_bin, reorder = TRUE)
+  gate_true   <- as.numeric(gate_sums / gate_counts)
+
+  list(
+    y = y,
+    m_0 = p_d,
+    d = d,
+    X = X,
+    tau_X = tau_X,
+    g_X = g_X,
+    ate_true = mean(tau_X),
+    gate_true = gate_true,
+    gate_bins = g_bin
+  )
+}
+
+#' Format Belloni Data to Tibble
+#'
+#' Converts the raw list output from \code{\link{gen_data_belloni}} into a formatted
+#' tibble ready for downstream modeling.
+#'
+#' @param x A list generated by \code{\link{gen_data_belloni}}.
+#'
+#' @returns A tibble containing:
+#' * `y`: Numeric vector of observed outcomes.
+#' * `d`: Integer vector of binary treatment indicators (0 or 1).
+#' * `X1, X2, ...`: Numeric covariate columns named sequentially from `X1` up to `Xp`.
+#'
+#' @examples
+#' data_list <- gen_data_belloni(n = 100, p = 10)
+#' dt <- format_data_belloni(data_list)
+#' dt
+#'
+#' @md
+format_data_belloni <- function(x) {
+  X <- as_tibble(x$X)
+  colnames(X) <- paste0("X", 1:ncol(X))
+  bind_cols(tibble(y = x$y, d = x$d, p_true = x$m_0, .name_repair = "unique"), X)
+}
+```
+
+
+
+### True Probabilities
+
+We will make the parameter $R^2_d$ vary in the simulations. We set three distinct values: $0.2$, $0.5$, and $0.8$. The impact on the distribution is shown in @fig-true-prob, where 1,000 observation were drawn.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 3
+#| code-fold: true
+#| code-summary: Show the R codes to create the figure.
+#| fig-cap: "Example of drawn probability to receive the treatment when varying $R^2_d$, for $n=1,000$ generated data."
+#| label: fig-true-prob
+#| message: FALSE
+#| warning: FALSE
+grid <- expand_grid(
+  Rd2 = c(.2, .5, .8),
+  Ry2 = .5
+)
+
+format_data_belloni_example <- function(x) {
+  X <- as_tibble(x$X)
+  colnames(X) <- str_replace(colnames(X), "^V", "X")
+  tibble(
+    y = x$y,
+    d = x$d,
+    p = x$m_0,
+    X
+  )
+}
+
+range_probas <- NULL
+par(mfrow = c(1,3))
+for (i in 1:nrow(grid)) {
+  x <- gen_data_belloni(
+    n = 1000,
+    p = 250,
+    Rd2 = grid$Rd2[i],
+    Ry2 = grid$Ry2[i],
+    rho = 0.5,
+    seed = 123
+  )
+  tb <- format_data_belloni_example(x)
+  hist(
+    tb |> filter(d==0) |> pull("p"),
+    col = alpha("red", .5), main = str_c("R_d=", grid$Rd2[i], ", R_y=", grid$Ry2[i]), xlim = c(0,1),
+    xlab = NULL)
+  hist(tb |> filter(d==1) |> pull("p"), col = alpha("blue", .5), add = TRUE)
+  range_probas <- bind_rows(
+    range_probas,
+    tibble(
+      Rd2 = grid$Rd2[i],
+      min_0 = tb |> filter(d == 0) |> pull("p") |> min(),
+      max_0 = tb |> filter(d == 0) |> pull("p") |> max(),
+      min_1 = tb |> filter(d == 1) |> pull("p") |> min(),
+      max_1 = tb |> filter(d == 1) |> pull("p") |> max()
+      )
+  )
+}
+rm(x, tb, grid, i)
+```
+
+
+
+Note that in each of these three cases, the range of drawn probabilities may be quite smaller than [0,1]:
+```{r}
+round(range_probas, 3)
+```
+
+
+## Functions
+
+### Learners
+
+There are two types of learners: those to estimate the outcome, $g()$, and those to estimate the propensity scores, $m()$.
+
+#### Nuisance Outcome Estimators
+
+We create functions to estimate the outcome, i.e., to estimate $g()$, and to make predictions. We consider:
+
+- OLS (`estim_g_ols`{R}, prediction with `predict_g_ols()`{}),
+- Lasso (`estim_g_lasso`{R}, prediction with `predict_g_lasso()`{}),
+- Random forest (regression) (`estim_g_rf`{R}, prediction with `predict_g_rf()`{}),
+- Light gradient boosting (`estim_g_lgbm`{R}, prediction with `predict_g_lgbm()`{}).
+
+The function `estim_g()`{.R} is a wrapper function for the estimation.
+
+```{r functions-estim-outcome-g}
+#| code-fold: true
+#| code-summary: Functions to estimate the outcome model (g).
+#' Estimate Outcome Models Across Folds
+#'
+#' Fits chosen outcome model learners $g(d, X) = \mathbb{E}[Y \mid D=d, X]$ on each
+#' training fold using cross-fitting.
+#'
+#' @param data A tibble containing the outcome `y`, binary treatment `d`, and
+#'   covariate columns \eqn{X_1, \dots, X_p}.
+#' @param learner_g_name String specifying the outcome model learner. Options:
+#'   `"ols"`, `"lasso", `"rf"`, `"lgbm"`.
+#' @param folds Integer vector of fold indices assigned to each row of `data`.
+#' @param equilibrium Logical. If `TRUE`, also fits an equilibrium outcome
+#'   regression model \eqn{g^{\text{eq}}(X) = \mathbb{E}[Y \mid X]} ignoring
+#'   treatment assignment. Default is `FALSE`.
+#'
+#' @returns A list of length K (number of unique folds). Each element contains the
+#'   fitted models returned by the specific estimation helper function.
+#'
+#' @md
+estim_g <- function(data,
+                    learner_g_name,
+                    folds,
+                    equilibrium = FALSE) {
+
+  estim_g_helper <- match.fun(paste0("estim_g_", learner_g_name))
+
+  K <- sort(unique(folds))
+  fitted_g <- vector(mode = "list", length = length(K))
+
+  for (k in K) {
+    ind_train <- which(folds != k)
+    fitted_g[[k]] <- estim_g_helper(
+      x = data |> dplyr::select(-"y", -!!"d") |> dplyr::slice(ind_train),
+      y = data$y[ind_train],
+      d = data$d[ind_train],
+      equilibrium = equilibrium
+    )
+  }
+
+  fitted_g
+}
+
+# OLS----
+
+#' OLS Learner for Outcome Models
+#'
+#' Fits separate Ordinary Least Squares (OLS) regressions for control (\eqn{D=0})
+#' and treated (\eqn{D=1}) units, and optionally for the equilibrium model.
+#'
+#' @param y Numeric vector of outcomes.
+#' @param x Matrix or data frame of covariates.
+#' @param d Vector of binary treatment indicators (`0` or `1`).
+#' @param equilibrium Logical. If `TRUE`, fits a pooled OLS model on all units.
+#'
+#' @returns A list containing:
+#' * fitted_g_0: Fitted \code{\link[stats]{lm}} model for untreated units (\eqn{D=0}).
+#' * fitted_g_1: Fitted \code{\link[stats]{lm}} model for treated units (\eqn{D=1}).
+#' * fitted_g_eqb: Fitted \code{\link[stats]{lm}} model for all units, or `NULL`
+#'   if `equilibrium = FALSE`.
+#'
+#' @md
+estim_g_ols <- function(y,
+                        x,
+                        d,
+                        equilibrium = FALSE) {
+  ind_d_0 <- which(d == 0)
+
+  tb_0 <- cbind(x[ind_d_0, , drop = FALSE], y = y[ind_d_0])
+  tb_1 <- cbind(x[-ind_d_0, , drop = FALSE], y = y[-ind_d_0])
+
+  fitted_g_0 <- stats::lm(y ~ ., data = tb_0)
+  fitted_g_1 <- stats::lm(y ~ ., data = tb_1)
+
+  if (isTRUE(equilibrium)) {
+    tb <- cbind(x, y = y)
+    fitted_g_eqb <- stats::lm(y ~ ., data = tb)
+  } else {
+    fitted_g_eqb <- NULL
+  }
+
+  list(
+    fitted_g_0 = fitted_g_0,
+    fitted_g_1 = fitted_g_1,
+    fitted_g_eqb = fitted_g_eqb
+  )
+}
+
+
+#' Predict Function for OLS Outcome Models
+#'
+#' @param object A fitted \code{\link[stats]{lm}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted outcomes.
+#' @md
+predict_g_ols <- function(object, new_data) {
+  predict(object, newdata = new_data) |> as.vector()
+}
+
+# Lasso----
+
+#' Lasso Learner for Outcome Models
+#'
+#' Fits Lasso linear regressions via \code{\link[hdm]{rlasso}} separately for
+#' control (\eqn{D=0}) and treated (\eqn{D=1}) units, and optionally for the
+#' equilibrium model.
+#'
+#' @param y Numeric vector of outcomes.
+#' @param x Matrix or data frame of covariates.
+#' @param d Vector of binary treatment indicators (`0` or `1`).
+#' @param equilibrium Logical. If `TRUE`, fits a pooled Lasso model on all units.
+#'
+#' @returns A list containing:
+#' * fitted_g_0: Fitted \code{\link[hdm]{rlasso}} model for untreated units (\eqn{D=0}).
+#' * fitted_g_1: Fitted \code{\link[hdm]{rlasso}} model for treated units (\eqn{D=1}).
+#' * fitted_g_eqb: Fitted \code{\link[hdm]{rlasso}} model for all units, or
+#'   `NULL` if `equilibrium = FALSE`.
+#'
+#' @md
+estim_g_lasso <- function(y,
+                          x,
+                          d,
+                          equilibrium = FALSE) {
+  ind_d_0 <- which(d == 0)
+
+  fitted_g_0 <- hdm::rlasso(x = as.matrix(x[ind_d_0, , drop = FALSE]), y = y[ind_d_0])
+  fitted_g_1 <- hdm::rlasso(x = as.matrix(x[-ind_d_0, , drop = FALSE]), y = y[-ind_d_0])
+
+  if (isTRUE(equilibrium)) {
+    fitted_g_eqb <- hdm::rlasso(x = as.matrix(x), y = y)
+  } else {
+    fitted_g_eqb <- NULL
+  }
+
+  list(
+    fitted_g_0 = fitted_g_0,
+    fitted_g_1 = fitted_g_1,
+    fitted_g_eqb = fitted_g_eqb
+  )
+}
+
+
+#' Predict Function for Lasso Outcome Models
+#'
+#' @param object A fitted \code{\link[hdm]{rlasso}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted outcomes.
+#' @md
+predict_g_lasso <- function(object, new_data) {
+  predict(object, newdata = as.matrix(new_data)) |> as.vector()
+}
+
+# Random Forest----
+
+#' Random Forest Learner for Outcome Models
+#'
+#' Fits Random Forest regression models via \code{\link[randomForest]{randomForest}}
+#' separately for control (\eqn{D=0}) and treated (\eqn{D=1}) units, and
+#' optionally for the equilibrium model.
+#'
+#' @param y Numeric vector of outcomes.
+#' @param x Matrix or data frame of covariates.
+#' @param d Vector of binary treatment indicators (`0` or `1`).
+#' @param equilibrium Logical. If `TRUE`, fits a pooled Random Forest model on
+#'   all units.
+#'
+#' @returns A list containing:
+#' * fitted_g_0: Fitted \code{\link[randomForest]{randomForest}} model for
+#'   untreated units (\eqn{D=0}).
+#' * fitted_g_1: Fitted \code{\link[randomForest]{randomForest}} model for
+#'   treated units (\eqn{D=1}).
+#' * fitted_g_eqb: Fitted \code{\link[randomForest]{randomForest}} model for
+#'   all units, or `NULL` if `equilibrium = FALSE`.
+#'
+#' @export
+estim_g_rf <- function(y,
+                       x,
+                       d,
+                       equilibrium = FALSE) {
+  ind_d_0 <- which(d == 0)
+
+  fitted_g_0 <- randomForest::randomForest(x = x[ind_d_0, , drop = FALSE], y = y[ind_d_0])
+  fitted_g_1 <- randomForest::randomForest(x = x[-ind_d_0, , drop = FALSE], y = y[-ind_d_0])
+
+  if (isTRUE(equilibrium)) {
+    fitted_g_eqb <- randomForest::randomForest(x = x, y = y)
+  } else {
+    fitted_g_eqb <- NULL
+  }
+
+  list(
+    fitted_g_0 = fitted_g_0,
+    fitted_g_1 = fitted_g_1,
+    fitted_g_eqb = fitted_g_eqb
+  )
+}
+
+
+#' Predict Function for Random Forest Outcome Models
+#'
+#' @param object A fitted \code{\link[randomForest]{randomForest}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted outcomes.
+#' @md
+predict_g_rf <- function(object, new_data) {
+  predict(object, newdata = new_data) |> as.vector()
+}
+
+# Boosting----
+
+#' LightGBM Learner for Outcome Models
+#'
+#' Fits LightGBM gradient boosting regression models via \code{\link[lightgbm]{lgb.train}}
+#' separately for control (\eqn{D=0}) and treated (\eqn{D=1}) units, and
+#' optionally for the equilibrium model.
+#'
+#' @param y Numeric vector of outcomes.
+#' @param x Matrix or data frame of covariates.
+#' @param d Vector of binary treatment indicators (`0` or `1`).
+#' @param equilibrium Logical. If `TRUE`, fits a pooled LightGBM model on all units.
+#' @param boosting_type Boosting type. Default is `"gbdt"`.
+#' @param num_leaves Maximum tree leaves for base learners. Default is `31`.
+#' @param max_depth Maximum tree depth. Default is `-1` (no limit).
+#' @param learning_rate Boosting learning rate. Default is `0.1`.
+#' @param n_estimators Number of boosting iterations. Default is `100`.
+#' @param subsample_for_bin Number of samples for constructing bins. Default is `200000`.
+#' @param min_split_gain Minimum loss reduction required for split. Default is `0.0`.
+#' @param min_child_weight Minimum sum of instance weight in a leaf. Default is `0.001`.
+#' @param min_child_samples Minimum number of data points in a leaf. Default is `20`.
+#' @param subsample Subsample ratio of training instances. Default is `1.0`.
+#' @param subsample_freq Frequency of subsample. Default is `0`.
+#' @param colsample_bytree Subsample ratio of columns per tree. Default is `1.0`.
+#' @param reg_alpha L1 regularization term on weights. Default is `0.0`.
+#' @param reg_lambda L2 regularization term on weights. Default is `0.0`.
+#' @param random_state Optional seed for reproducibility.
+#' @param n_jobs Number of parallel threads.
+#'
+#' @returns A list containing:
+#' * fitted_g_0: Fitted \code{\link[lightgbm]{lgb.Booster}} model for untreated
+#'   units (\eqn{D=0}).
+#' * fitted_g_1: Fitted \code{\link[lightgbm]{lgb.Booster}} model for treated
+#'   units (\eqn{D=1}).
+#' * fitted_g_eqb: Fitted \code{\link[lightgbm]{lgb.Booster}} model for all
+#'   units, or `NULL` if `equilibrium = FALSE`.
+#'
+#' @md
+estim_g_lgbm <- function(y,
+                         x,
+                         d,
+                         equilibrium = FALSE,
+                         boosting_type = "gbdt",
+                         num_leaves = 31,
+                         max_depth = -1,
+                         learning_rate = 0.1,
+                         n_estimators = 100,
+                         subsample_for_bin = 200000,
+                         min_split_gain = 0.0,
+                         min_child_weight = 0.001,
+                         min_child_samples = 20,
+                         subsample = 1.0,
+                         subsample_freq = 0,
+                         colsample_bytree = 1.0,
+                         reg_alpha = 0.0,
+                         reg_lambda = 0.0,
+                         random_state = NULL,
+                         n_jobs = NULL) {
+
+  params <- list(
+    boosting = boosting_type,
+    objective = "regression",
+    num_leaves = num_leaves,
+    max_depth = max_depth,
+    learning_rate = learning_rate,
+    subsample_for_bin = subsample_for_bin,
+    min_split_gain = min_split_gain,
+    min_child_weight = min_child_weight,
+    min_data_in_leaf = min_child_samples,
+    bagging_fraction = subsample,
+    bagging_freq = subsample_freq,
+    feature_fraction = colsample_bytree,
+    lambda_l1 = reg_alpha,
+    lambda_l2 = reg_lambda
+  )
+
+  if (!is.null(random_state)) params$seed <- random_state
+  if (!is.null(n_jobs)) params$num_threads <- n_jobs
+
+  ind_d_0 <- which(d == 0)
+
+  X0 <- as.matrix(x[ind_d_0, , drop = FALSE])
+  y0 <- y[ind_d_0]
+  X1 <- as.matrix(x[-ind_d_0, , drop = FALSE])
+  y1 <- y[-ind_d_0]
+
+  dtrain0 <- lightgbm::lgb.Dataset(data = X0, label = y0)
+  dtrain1 <- lightgbm::lgb.Dataset(data = X1, label = y1)
+
+  fitted_g_0 <- lightgbm::lgb.train(
+    params = params,
+    data = dtrain0,
+    nrounds = n_estimators,
+    verbose = -1
+  )
+
+  fitted_g_1 <- lightgbm::lgb.train(
+    params = params,
+    data = dtrain1,
+    nrounds = n_estimators,
+    verbose = -1
+  )
+
+  if (isTRUE(equilibrium)) {
+    X <- as.matrix(x)
+    dtrain <- lightgbm::lgb.Dataset(data = X, label = y)
+
+    fitted_g_eqb <- lightgbm::lgb.train(
+      params = params,
+      data = dtrain,
+      nrounds = n_estimators,
+      verbose = -1
+    )
+  } else {
+    fitted_g_eqb <- NULL
+  }
+
+  list(
+    fitted_g_0 = fitted_g_0,
+    fitted_g_1 = fitted_g_1,
+    fitted_g_eqb = fitted_g_eqb
+  )
+}
+
+
+#' Predict Function for LightGBM Outcome Models
+#'
+#' @param object A fitted \code{\link[lightgbm]{lgb.Booster}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted outcomes.
+#' @md
+predict_g_lgbm <- function(object, new_data) {
+  preds <- predict(object, newdata = as.matrix(new_data))
+  as.vector(preds)
+}
+
+```
+
+#### Nuisance Propensity Score Estimators
+
+We also define similar functions to estimate the propensity score ($m()$), using:
+
+- logistic regression (`estim_m_logit()`{.R}, and `predict_m_()`{.R} to make predictions),
+- regression (`estim_m_rf_classif()`{.R}, and `predict_m_rf_classif()`{.R} to make predictions),
+- regression (`estim_m_rf_reg()`{.R}, and `predict_m_rf_reg()`{.R} to make predictions),
+- regression (`estim_m_lgbm()`{.R}, and `predict_m_lgbm()`{.R} to make predictions).
+
+The function `estim_m()`{.R} is a wrapper function.
+
+```{r functions-estim-outcome-m}
+#| code-fold: true
+#| code-summary: Functions to estimate the propensity score (m).
+
+#' Estimate Propensity Score Models Across Folds
+#'
+#' Fits chosen propensity score model learners \eqn{m(X) = \Pr(D = 1 \mid X)}
+#' on each training fold using cross-fitting.
+#'
+#' @param data A tibble containing the binary treatment
+#'   column `d`, outcome column `y`, and covariate columns \eqn{X_1, \dots, X_p}.
+#' @param learner_m_name String specifying the propensity score model learner.
+#'   Options: `"logit"`, `"rf_classif"`, `"rf_reg"`, `"lgbm"`.
+#' @param folds Integer vector of fold indices assigned to each row of `data}.
+#'
+#' @returns A list of length K (number of unique folds). Each element contains the
+#'   fitted propensity score model returned by the specific estimation helper function.
+#'
+#' @md
+estim_m <- function(data,
+                    learner_m_name,
+                    folds) {
+
+  estim_m_helper <- match.fun(paste0("estim_m_", learner_m_name))
+
+  K <- sort(unique(folds))
+  fitted_m <- vector(mode = "list", length = length(K))
+
+  for (k in K) {
+    ind_train <- which(folds != k)
+    fitted_m[[k]] <- estim_m_helper(
+      d = data$d[ind_train],
+      x = data |> dplyr::select(-"y", -!!"d") |> dplyr::slice(ind_train)
+    )
+  }
+
+  fitted_m
+}
+
+# Logit----
+
+
+#' Logistic Regression Learner for Propensity Score
+#'
+#' Fits a logistic regression model \eqn{\Pr(D = 1 \mid X) = \text{logit}^{-1}(X \beta)}
+#' via \code{\link[stats]{glm}}.
+#'
+#' @param d Integer or numeric vector of binary treatment indicators (`0` or `1`).
+#' @param x Matrix or data frame of covariates.
+#'
+#' @returns A fitted \code{\link[stats]{glm}} object with binomial family link.
+#'
+#' @md
+estim_m_logit <- function(d, x) {
+  tb <- cbind(x, d = d)
+  stats::glm(d ~ ., data = tb, family = "binomial")
+}
+
+
+#' Predict Function for Logistic Regression Propensity Score
+#'
+#' @param object A fitted \code{\link[stats]{glm}} logistic model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted propensity scores bounded in \eqn{(0, 1)}.
+#'
+#' @md
+predict_m_logit <- function(object, new_data) {
+  predict(object, newdata = new_data, type = "response") |> as.vector()
+}
+
+# Random Forest Classifier----
+
+#' Random Forest Classifier Learner for Propensity Score
+#'
+#' Fits a classification Random Forest model via \code{\link[randomForest]{randomForest}}
+#' treating treatment status $D$ as a categorical factor.
+#'
+#' @param d Integer, numeric vector, or factor of binary treatment indicators (`0` or `1`).
+#' @param x Matrix or data frame of covariates.
+#'
+#' @returns A fitted classification \code{\link[randomForest]{randomForest}} model.
+#'
+#' @md
+estim_m_rf_classif <- function(d, x) {
+  if (!is.factor(d)) d <- as.factor(as.character(d))
+  randomForest::randomForest(x = x, y = d)
+}
+
+
+#' Predict Function for Random Forest Classifier Propensity Score
+#'
+#' @param object A fitted classification \code{\link[randomForest]{randomForest}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted class-1 probabilities.
+#'
+#' @md
+predict_m_rf_classif <- function(object, new_data) {
+  preds <- randomForest:::predict.randomForest(object, newdata = new_data, type = "prob")[, 2]
+  as.vector(preds)
+}
+
+# Random Forest Regression----
+
+#' Random Forest Regression Learner for Propensity Score
+#'
+#' Fits a regression Random Forest model via \code{\link[randomForest]{randomForest}}
+#' treating treatment status $D$ as a continuous response in \eqn{\{0, 1\}}.
+#'
+#' @param d Numeric vector of binary treatment indicators (`0` or `1`).
+#' @param x Matrix or data frame of covariates.
+#'
+#' @returns A fitted regression \code{\link[randomForest]{randomForest}} model.
+#'
+#' @md
+estim_m_rf_reg <- function(d, x) {
+  randomForest::randomForest(x = x, y = as.numeric(d))
+}
+
+
+#' Predict Function for Random Forest Regression Propensity Score
+#'
+#' @param object A fitted regression \code{\link[randomForest]{randomForest}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted propensity scores.
+#'
+#' @export
+predict_m_rf_reg <- function(object, new_data) {
+  predict(object, newdata = new_data, type = "response") |> as.vector()
+}
+
+
+# Boosting----
+
+#' LightGBM Learner for Propensity Score
+#'
+#' Fits a gradient boosted binary classification model via \code{\link[lightgbm]{lgb.train}}.
+#'
+#' @param d Vector of binary treatment indicators (`0` or `1`).
+#' @param x Matrix or data frame of covariates.
+#' @param boosting_type Boosting type. Default is `"gbdt"`.
+#' @param num_leaves Maximum tree leaves for base learners. Default is `31`.
+#' @param max_depth Maximum tree depth. Default is `-1` (no limit).
+#' @param learning_rate Boosting learning rate. Default is `0.1}.
+#' @param n_estimators Number of boosting iterations. Default is `100}.
+#' @param subsample_for_bin Number of samples for constructing bins. Default is `200000`.
+#' @param min_split_gain Minimum loss reduction required for split. Default is `0.0`.
+#' @param min_child_weight Minimum sum of instance weight in a leaf. Default is `0.001`.
+#' @param min_child_samples Minimum number of data points in a leaf. Default is `20`.
+#' @param subsample Subsample ratio of training instances. Default is `1.0`.
+#' @param subsample_freq Frequency of subsample. Default is `0}.
+#' @param colsample_bytree Subsample ratio of columns per tree. Default is `1.0`.
+#' @param reg_alpha L1 regularization term on weights. Default is `0.0`.
+#' @param reg_lambda L2 regularization term on weights. Default is `0.0`.
+#' @param random_state Optional seed for reproducibility.
+#' @param n_jobs Number of parallel threads.
+#'
+#' @returns A fitted \code{\link[lightgbm]{lgb.Booster}} binary classification model.
+#'
+#' @export
+estim_m_lgbm <- function(d, x,
+                         boosting_type = "gbdt",
+                         num_leaves = 31,
+                         max_depth = -1,
+                         learning_rate = 0.1,
+                         n_estimators = 100,
+                         subsample_for_bin = 200000,
+                         min_split_gain = 0.0,
+                         min_child_weight = 0.001,
+                         min_child_samples = 20,
+                         subsample = 1.0,
+                         subsample_freq = 0,
+                         colsample_bytree = 1.0,
+                         reg_alpha = 0.0,
+                         reg_lambda = 0.0,
+                         random_state = NULL,
+                         n_jobs = NULL) {
+
+  X <- as.matrix(x)
+  y <- as.numeric(d)
+
+  dtrain <- lightgbm::lgb.Dataset(data = X, label = y)
+
+  params <- list(
+    boosting = boosting_type,
+    objective = "binary",
+    metric = "binary_logloss",
+    num_leaves = num_leaves,
+    max_depth = max_depth,
+    learning_rate = learning_rate,
+    subsample_for_bin = subsample_for_bin,
+    min_split_gain = min_split_gain,
+    min_child_weight = min_child_weight,
+    min_data_in_leaf = min_child_samples,
+    bagging_fraction = subsample,
+    bagging_freq = subsample_freq,
+    feature_fraction = colsample_bytree,
+    lambda_l1 = reg_alpha,
+    lambda_l2 = reg_lambda
+  )
+
+  if (!is.null(random_state)) params$seed <- random_state
+  if (!is.null(n_jobs)) params$num_threads <- n_jobs
+
+  lightgbm::lgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = n_estimators,
+    verbose = -1
+  )
+}
+
+
+#' Predict Function for LightGBM Propensity Score
+#'
+#' @param object A fitted \code{\link[lightgbm]{lgb.Booster}} model.
+#' @param new_data Data frame or matrix of new covariate values.
+#'
+#' @returns Numeric vector of predicted propensity score probabilities.
+#'
+#' @export
+predict_m_lgbm <- function(object, new_data) {
+  preds <- predict(object, newdata = as.matrix(new_data))
+  as.vector(preds)
+}
+
+```
+
+
+### Calibration
+
+
+We define some functions to calibrate the propensity scores. We consider multiple possible methods to calibrate the scores:
+
+- Platt scaling,
+- Isotonic regression,
+- Beta calibration.
+
+We use two different algorithms to implement those: one which does not recalibrate (algorithm 1 in @klaassen2025calibrationstrategiesrobustcausal) and one which recalibrates using one of the three calibration methods (algorithm 3 in @klaassen2025calibrationstrategiesrobustcausal).
+
+```{r calibration-functions}
+#| code-fold: true
+#| code-summary: Calibration functions.
+#' Calibrate Predicted Probabilities / Propensity Scores
+#'
+#' @description
+#' Fits a specified calibration model on validation/training predictions and
+#' outputs calibrated propensity scores bounded within a clipping interval.
+#'
+#' @param d Numeric vector of binary treatment status (\eqn{D \in \{0, 1\}}).
+#' @param scores Numeric vector of uncalibrated predicted probabilities
+#'   (\eqn{\hat{m}(X) \in (0, 1)}).
+#' @param new_scores Numeric vector of uncalibrated predicted probabilities on
+#'   test data to be calibrated.
+#' @param g0 Numeric vector of predicted outcomes in group 0 (\eqn{\hat{g}_0(X)}).
+#'   Default to `NULL`, only used if `method="joint-platt`.
+#' @param g0 Numeric vector of predicted outcomes in group 1 (\eqn{\hat{g}_0(X)}).
+#'   Default to `NULL`, only used if `method="joint-platt`.
+#' @param new_g0 Numeric vector of predicted outcomes in group 0 on test data.
+#'   Default to `NULL`, only used if `method="joint-platt`.
+#' @param new_g0 Numeric vector of predicted outcomes in group 1 on test data.
+#'   Default to `NULL`, only used if `method="joint-platt`.
+#' @param method Character string specifying calibration method. Options:
+#'   `"uncalibrated"`, `"isotonic"`, `"platt"`, `"beta"`, or `"joint-platt"`.
+#' @param clipping_threshold Numeric scalar or length-2 numeric vector
+#'   specifying lower and upper clipping bounds. Default is `1e-12`
+#'   (clipped to `[1e-12, 1 - 1e-12]`).
+#'
+#' @returns A numeric vector of calibrated predicted probabilities for `new_scores`.
+#'
+#' @md
+calibrate <- function(d,
+                      scores,
+                      new_scores,
+                      g0 = NULL,
+                      g1 = NULL,
+                      new_g0 = NULL,
+                      new_g1 = NULL,
+                      method = "uncalibrated",
+                      clipping_threshold = 1e-12) {
+
+  # Resolve upper/lower clipping boundaries
+  if (length(clipping_threshold) == 1) {
+    clip_lower <- clipping_threshold
+    clip_upper <- 1 - clipping_threshold
+  } else if (length(clipping_threshold) == 2) {
+    clip_lower <- clipping_threshold[1]
+    clip_upper <- clipping_threshold[2]
+  } else {
+    stop("`clipping_threshold` must be a numeric scalar or a length-2 numeric vector.")
+  }
+
+  if (method == "uncalibrated") {
+    calib_pred <- new_scores
+
+  } else {
+    eps        <- 1e-12
+    scores_safe <- pmin(pmax(scores, eps), 1 - eps)
+    new_scores_safe   <- pmin(pmax(new_scores, eps), 1 - eps)
+
+    if (method == "isotonic") {
+      iso_fit    <- isoreg(x = scores_safe, y = d)
+      step_fn <- as.stepfun(iso_fit)
+      calib_pred <- step_fn(new_scores_safe)
+
+    } else if (method == "platt") {
+      platt_fit  <- glm(d ~ scores_safe, family = binomial(link = "logit"))
+      calib_pred <- predict(
+        platt_fit, newdata = data.frame(new_scores_safe = new_scores_safe),
+        type = "response"
+      )
+
+    } else if (method == "beta") {
+      log_p       <- log(scores_safe)
+      log_1p      <- log(1 - scores_safe)
+      new_log_p   <- log(new_scores_safe)
+      new_log_1p  <- log(1 - new_scores_safe)
+
+      beta_fit   <- glm(d ~ log_p + log_1p, family = binomial(link = "logit"))
+      calib_pred <- predict(
+        beta_fit, newdata = data.frame(log_p = new_log_p, log_1p = new_log_1p),
+        type = "response"
+      )
+
+    } else if (method == "joint-platt") {
+
+      feat_mat <- cbind(scores_safe, g0, g1)
+      new_feat_mat <- cbind(new_scores_safe, g0, g1)
+
+      feat_mat <- scale(feat_mat) # Standardize columns
+      new_feat_mat <- scale(new_feat_mat)
+
+      joint_platt_fit <- glm(
+        d ~ ., data = as.data.frame(feat_mat), family = binomial(link = "logit")
+      )
+      calib_pred <- predict(
+        joint_platt_fit,
+        newdata = as.data.frame(new_feat_mat), type = "response")
+
+    } else {
+      stop(sprintf("Unsupported calibration method: '%s'", method))
+    }
+  }
+
+
+  # Enforce probability clipping boundaries
+  pmin(pmax(calib_pred, clip_lower), clip_upper)
+}
+
+
+#' Estimate Nuisance Parameters Across Folds (Algorithm Router)
+#'
+#' @description
+#' High-level wrapper function to estimate cross-fitted outcome regressions and
+#' calibrated propensity scores for a specific algorithm architecture.
+#'
+#' @param g_name Character string specifying outcome model learner name.
+#' @param m_name Character string specifying propensity score learner name.
+#' @param algorithm_name Character string identifying algorithm structure:
+#'   `"alg-1-uncalibrated"` or `"alg-3-cross-fitted-calib"`.
+#' @param calib_name Character string specifying the calibration method passed
+#'   to \code{\link{calibrate}}.
+#' @param data Prepared dataset (tibble/data.frame) containing variables `y`,
+#'  `d`, and feature matrix columns.
+#' @param folds Vector of fold assignment integers for each observation.
+#' @param n_folds Integer specifying number of cross-fitting folds.
+#' @param models_g Pre-fitted outcome models list produced by \code{estim_g()}.
+#' @param models_m Pre-fitted propensity score models list produced by \code{estim_m()}.
+#' @param clipping_threshold Lower/upper clipping thresholds passed to \code{\link{calibrate}}.
+#'
+#' @returns A list of length `n_folds`, where each element contains out-of-fold predicted
+#'   vectors: `g0_pred_k`, `g1_pred_k`, and `m_pred_k`.
+#'
+#' @md
+nuisance_estim <- function(g_name,
+                           m_name,
+                           algorithm_name,
+                           calib_name,
+                           data,
+                           folds,
+                           n_folds,
+                           models_g,
+                           models_m,
+                           clipping_threshold = 1e-12) {
+
+  if (algorithm_name == "alg-1-uncalibrated") {
+    alg_1_uncalibrated(
+      g_name = g_name, m_name = m_name, data = data, folds = folds,
+      n_folds = n_folds, models_g = models_g, models_m = models_m,
+      clipping_threshold = clipping_threshold
+    )
+  } else if (algorithm_name == "alg-3-cross-fitted-calib") {
+    alg_3_cross_fitted_calib(
+      g_name = g_name, m_name = m_name, calib_name = calib_name,
+      data = data, folds = folds, n_folds = n_folds,
+      models_g = models_g, models_m = models_m,
+      clipping_threshold = clipping_threshold
+    )
+  } else {
+    stop(sprintf("Unknown algorithm structure: '%s'", algorithm_name))
+  }
+}
+
+
+#' Standard Uncalibrated Double Machine Learning Nuisance Estimation (Algorithm 1)
+#'
+#' @description
+#' Computes out-of-fold outcome and propensity predictions using standard K-fold
+#' cross-fitting without additional calibration steps.
+#'
+#' @inheritParams nuisance_estim
+#'
+#' @returns A list of length `n_folds` containing out-of-fold predictions.
+#'
+#' @md
+alg_1_uncalibrated <- function(g_name,
+                               m_name,
+                               data,
+                               folds,
+                               n_folds,
+                               models_g,
+                               models_m,
+                               clipping_threshold = 1e-12) {
+
+  map(seq_len(n_folds), function(k) {
+    test_idx <- which(folds == k)
+    data_k   <- data[test_idx, ]
+    d_k <- data_k$d
+    y_k <- data_k$y
+    data_k <- data_k |> dplyr::select(-d, -y)
+
+    # Predict outcome regression g(X)
+    predict_g_fn <- get(sprintf("predict_g_%s", g_name))
+    g_model_k    <- models_g[[g_name]][[k]] # previously trained outcome learner model (on I_k^c)
+    g0_preds     <- predict_g_fn(g_model_k$fitted_g_0, data_k)
+    g1_preds     <- predict_g_fn(g_model_k$fitted_g_1, data_k)
+    if (!is.null(g_model_k$fitted_g_eqb)) {
+      geqb_preds <- predict_g_fn(g_model_k$fitted_g_eqb, data_k)
+    } else geqb_pred_k <- NULL
+
+    # Predict propensity score m(X)
+    predict_m_fn <- get(sprintf("predict_m_%s", m_name))
+    m_raw        <- predict_m_fn(models_m[[m_name]][[k]], data_k)
+
+    # Clip raw propensity predictions
+    m_clipped    <- calibrate(
+      d                  = d_k,
+      scores             = m_raw,
+      new_scores         = m_raw,
+      g0                 = g0_preds,
+      g1                 = g1_preds,
+      new_g0             = g0_preds,
+      new_g1             = g1_preds,
+      method             = "uncalibrated",
+      clipping_threshold = clipping_threshold
+    )
+
+    list(
+      k           = k,
+      g0_pred_k   = g0_preds,
+      g1_pred_k   = g1_preds,
+      geqb_pred_k = geqb_preds,
+      m_pred_k    = m_clipped,
+      y_k         = y_k,
+      d_k         = d_k
+    )
+  })
+}
+
+
+#' Cross-Fitted Calibrated Double Machine Learning Nuisance Estimation (Algorithm 3)
+#'
+#' @description
+#' Performs cross-fitted calibration where primary nuisance predictions from
+#' fold k are calibrated on fold k' before generating final out-of-fold
+#' predictions for target fold k.
+#'
+#' @inheritParams nuisance_estim
+#'
+#' @returns A list of length `n_folds` containing out-of-fold predictions.
+#'
+#' @md
+alg_3_cross_fitted_calib <- function(g_name,
+                                     m_name,
+                                     calib_name,
+                                     data,
+                                     folds,
+                                     n_folds,
+                                     models_g,
+                                     models_m,
+                                     clipping_threshold = 1e-12) {
+
+  predict_g_fn <- get(sprintf("predict_g_%s", g_name))
+  predict_m_fn <- get(sprintf("predict_m_%s", m_name))
+
+  map(seq_len(n_folds), function(k) {
+    test_idx <- which(folds == k)
+    data_k   <- data[test_idx, ]
+    d_k <- data_k$d
+    y_k <- data_k$y
+    data_k <- data_k |> dplyr::select(-d, -y)
+
+    # Primary predictions on test fold k
+    g_model_k <- models_g[[g_name]][[k]] # previously trained outcome learner model (on I_k^c)
+    g0_preds <- predict_g_fn(g_model_k$fitted_g_0, data_k)
+    g1_preds <- predict_g_fn(g_model_k$fitted_g_1, data_k)
+    if (!is.null(g_model_k$fitted_g_eqb)) {
+      geqb_preds <- predict_g_fn(g_model_k$fitted_g_eqb, data_k)
+    } else geqb_preds <- NULL
+
+    m_raw_k <- predict_m_fn(models_m[[m_name]][[k]], data_k)
+
+    # Clipping
+    m_clipped_k <- pmin(
+      pmax(m_raw_k, 0.0 + clipping_threshold),
+      1.0 - clipping_threshold
+    )
+
+    # Calibration based on data from the left-out sample
+    m_calibrated <- calibrate(
+      d                  = d_k,
+      scores             = m_clipped_k,
+      new_scores         = m_clipped_k,
+      g0                 = g0_preds,
+      g1                 = g1_preds,
+      new_g0             = g0_preds,
+      new_g1             = g1_preds,
+      method             = calib_name,
+      clipping_threshold = clipping_threshold
+    )
+
+    list(
+      k           = k,
+      g0_pred_k   = g0_preds,
+      g1_pred_k   = g1_preds,
+      geqb_pred_k = geqb_preds,
+      m_pred_k    = m_calibrated,
+      y_k         = y_k,
+      d_k         = d_k
+    )
+  })
+}
+```
+
+
+### Metrics
+
+We define two functions, `compute_ece()`{.R} and `kullback_leibler()`{.R} to compute the Expected Calibration Error (ECE) and the Kullback-Leibler (KL) divergence between two distributions.
+
+```{r define-metrics}
+#| code-fold: true
+#| code-summary: The `compute_ece()`{.R} and `kullback_leibler`{.R} functions.
+#' Expected Calibration Error (ECE)
+#'
+#' @description
+#' Calculates the Expected Calibration Error (ECE) using uniform-width or quantile binning.
+#'
+#' @param d Binary indicator vector of observed labels/treatments.
+#' @param scores Continuous vector of estimated predicted probabilities.
+#' @param n_bins Integer specifying number of calibration bins. Default is `10`.
+#' @param binning Character string indicating bin construction: `"width"` (equal length)
+#'   or `"quantile"` (equal frequency). Default is `"width"`.
+#'
+#' @returns Numeric scalar value representing ECE.
+#'
+#' @md
+compute_ece <- function(d,
+                        scores,
+                        n_bins = 10,
+                        binning = "width") {
+  n <- length(scores)
+
+  if (binning == "width") {
+    bin_cuts <- seq(0, 1, length.out = n_bins + 1)
+  } else if (binning == "quantile") {
+    bin_cuts <- quantile(
+      scores, probs = seq(0, 1, length.out = n_bins + 1), names = FALSE
+    )
+    bin_cuts <- unique(bin_cuts)
+  } else {
+    stop("`binning` must be either 'width' or 'quantile'.")
+  }
+
+  # Assign bins
+  bins <- cut(scores, breaks = bin_cuts, include.lowest = TRUE, labels = FALSE)
+
+  # Drop empty bins
+  keep <- !is.na(bins)
+  bins <- bins[keep]
+  d <- d[keep]
+  scores <- scores[keep]
+
+  # Aggregate statistics
+  bin_counts <- as.numeric(table(bins))
+  weights <- bin_counts / sum(bin_counts)
+
+  acc <- tapply(d, bins, mean)
+  if (any(is.na(acc))) acc[which(is.na(acc))] <- 0
+  conf <- tapply(scores, bins, mean)
+  if (any(is.na(conf))) conf[which(is.na(conf))] <- 0
+
+  sum(weights * abs(acc - conf))
+}
+
+
+#' Kullback-Leibler (KL) Divergence
+#'
+#' @description
+#' Calculates KL divergence between true underlying probability distribution $P$ and
+#' estimated propensity score distribution $Q$.
+#'
+#' @param true_probas Numeric vector of ground-truth probabilities ($P$).
+#' @param scores Numeric vector of predicted/calibrated probabilities ($Q$).
+#' @param eps Small constant added for numerical stability to prevent $\log(0)$. Default is `1e-12`.
+#'
+#' @returns Numeric scalar value representing mean KL divergence.
+#'
+#' @md
+kullback_leibler <- function(true_probas, scores, eps = 1e-12) {
+  p <- pmin(pmax(true_probas, eps), 1 - eps)
+  q <- pmin(pmax(scores, eps), 1 - eps)
+
+  # Pointwise Bernoulli KL divergence: P log(P/Q) + (1-P) log((1-P)/(1-Q))
+  kl_i <- p * log(p / q) + (1 - p) * log((1 - p) / (1 - q))
+  mean(kl_i)
+}
+```
+
+## Causal Estimators
+
+
+We consider different estimator for the ATE:
+
+- Using the difference between the mean predicted outcomes in the two groups (`compute_ate_reg()`{.R}),
+- The Inverse Propensity Weighting estimator (`compute_ate_ipw()`{.R}),
+- The Augmented Inverse Propensity Weighting estimator (`compute_ate_aipw()`{.R}),
+- These IPW and AIPW estimators with normalized weights (@Hirano_2003),
+- The estimators with no propensity score on the denominator from @flachaire2025decomposinginequalitiesusingmachine (Eq 60, p. 16) (`compute_ate_eqb_reg()`{.R}, `compute_ate_eqb_ipw()`{.R}, and `compute_ate_eqb_aipw()`{.R}).
+
+We use cross-fold validation to compute the ATE. The function `compute_ate_folds()` calls the estimation functions to estimate the ATE on left-out folds and aggregates the estimated values from the different folds by computing an average.
+
+```{r define-ate-functions}
+#| code-fold: true
+#| code-summary: Functions to compute the ATE
+#' Simple Regression-Based ATE Estimator
+#' @keywords internal
+compute_ate_reg <- function(g0, g1) {
+  mean(g1 - g0)
+}
+
+# Unnormalized IPW and AIPW----
+
+#' Inverse Probability Weighting (IPW) ATE Estimator
+#' @keywords internal
+compute_ate_ipw <- function(m, d, y) {
+  mean( (d * y / m) - ((1 - d) * y / (1 - m)) )
+}
+
+#' Doubly Robust AIPW ATE Estimator
+#' @keywords internal
+compute_ate_aipw <- function(g0, g1, m, d, y) {
+  mean( (g1 - g0) + (d * (y - g1) / m) - ((1 - d) * (y - g0) / (1 - m)) )
+}
+
+# Hajeck Normalized IPW and AIPW----
+
+#' Normalized / Stabilized Inverse Probability Weighting (Hajek ATE)
+#'
+#' @param m Numeric vector of predicted propensity scores.
+#' @param d Numeric vector of binary treatment indicators.
+#' @param y Numeric vector of observed outcomes.
+#'
+#' @return Numeric scalar of normalized IPW ATE.
+#' @export
+compute_ate_ipw_normalized <- function(m, d, y) {
+  w1 <- d / m
+  w0 <- (1 - d) / (1 - m)
+
+  e1 <- sum(w1 * y) / sum(w1)
+  e0 <- sum(w0 * y) / sum(w0)
+
+  e1 - e0
+}
+
+#' Normalized Doubly Robust / AIPW ATE Estimator
+#'
+#' @export
+compute_ate_aipw_normalized <- function(g0, g1, m, d, y) {
+  w1 <- d / m
+  w0 <- (1 - d) / (1 - m)
+
+  # Standard baseline outcome regressions
+  dr_base <- mean(g1 - g0)
+
+  # Normalized residual corrections
+  adj1 <- sum(w1 * (y - g1)) / sum(w1)
+  adj0 <- sum(w0 * (y - g0)) / sum(w0)
+
+  dr_base + adj1 - adj0
+}
+
+# Equilibrium / Balancing IPW and AIPW----
+
+compute_ate_eqb_reg <- function(y, d, geqb_pred) {
+  n0 <- sum(d == 0)
+  n1 <- sum(d == 1)
+
+  robust_signal <- (1/n1) * (y - geqb_pred) - (1/n0) * (y - geqb_pred) * (1 - d)
+  mean(robust_signal)
+}
+
+compute_ate_eqb_ipw <- function(y, d, m_pred) {
+  n0 <- sum(d == 0)
+  n1 <- sum(d == 1)
+
+  robust_signal <- (1/n1 + 1/n0) * y * (d - m_pred)
+  mean(robust_signal)
+}
+
+compute_ate_eqb_aipw <- function(y, d, geqb_pred, m_pred) {
+  n0 <- sum(d == 0)
+  n1 <- sum(d == 1)
+
+  robust_signal <- (1/n1 + 1/n0) * (y - geqb_pred) * (d - m_pred)
+  mean(robust_signal)
+}
+
+# Fold Aggregator----
+
+#' Aggregate ATE estimates across folds (cross-fitting)
+#'
+#' @param pred_folds List of fold objects (see [nuisance_estim()]).
+#' @param n_folds Number of folds used in the cross-fitting procedure.
+#'
+#' @description
+#' Computes fold-specific ATE estimates using outcome regression, unnormalized
+#' and Hajek-normalized IPW/AIPW, and equilibrium estimators, then aggregates
+#' them by averaging across folds.
+#'
+#' @md
+compute_ate_folds <- function(pred_folds, n_folds) {
+  ate_folds <- vector(mode = "list", length = n_folds)
+
+  for (k in seq_len(n_folds)) {
+    g0_pred_k   <- pred_folds[[k]]$g0_pred_k
+    g1_pred_k   <- pred_folds[[k]]$g1_pred_k
+    geqb_pred_k <- pred_folds[[k]]$geqb_pred_k
+    m_pred_k    <- pred_folds[[k]]$m_pred_k
+    y_k         <- pred_folds[[k]]$y_k
+    d_k         <- pred_folds[[k]]$d_k
+
+    # 1. Baseline Regression Estimator
+    ate_reg_k <- compute_ate_reg(g0 = g0_pred_k, g1 = g1_pred_k)
+
+    # 2. Unnormalized Estimators
+    ate_ipw_k  <- compute_ate_ipw(m = m_pred_k, d = d_k, y = y_k)
+    ate_aipw_k <- compute_ate_aipw(
+      g0 = g0_pred_k, g1 = g1_pred_k, m = m_pred_k, d = d_k, y = y_k
+    )
+
+    # 3. Hajek Normalized Estimators
+    ate_ipw_norm_k <- compute_ate_ipw_normalized(
+      m = m_pred_k, d = d_k, y = y_k
+    )
+    ate_aipw_norm_k <- compute_ate_aipw_normalized(
+      g0 = g0_pred_k, g1 = g1_pred_k, m = m_pred_k, d = d_k, y = y_k
+    )
+
+    # 4. Equilibrium Estimators (Flachaire et al., 2025)
+    ate_eqb_reg_k  <- compute_ate_eqb_reg(
+      y = y_k, d = d_k, geqb_pred = geqb_pred_k
+    )
+    ate_eqb_ipw_k  <- compute_ate_eqb_ipw(
+      y = y_k, d = d_k, m_pred = m_pred_k
+    )
+    ate_eqb_aipw_k <- compute_ate_eqb_aipw(
+      y = y_k, d = d_k, geqb_pred = geqb_pred_k, m_pred = m_pred_k
+    )
+
+    # Store fold results
+    ate_folds[[k]] <- list(
+      ate_reg       = ate_reg_k,
+      ate_ipw       = ate_ipw_k,
+      ate_ipw_norm  = ate_ipw_norm_k,
+      ate_aipw      = ate_aipw_k,
+      ate_aipw_norm = ate_aipw_norm_k,
+      ate_eqb_reg   = ate_eqb_reg_k,
+      ate_eqb_ipw   = ate_eqb_ipw_k,
+      ate_eqb_aipw  = ate_eqb_aipw_k
+    )
+  }
+
+  # Average across folds
+  ate <- names(ate_folds[[1]]) |>
+    map(\(ate_type) mean(map_dbl(ate_folds, ate_type)))
+  names(ate) <- names(ate_folds[[1]])
+
+  as_tibble(ate)
+}
+
+# GATE----
+
+#' Max-|Z| Quantile for Simultaneous Confidence Intervals
+#'
+#' Computes the \eqn{(1 - \alpha)} quantile of the distribution of
+#' \eqn{\max_{j=1,\dots,p} |Z_j|}, where \eqn{Z_j \sim \mathcal{N}(0,1)}
+#' are independent.
+#' @param p Dimension of the parameter vector (number of simultaneous statistics).
+#' @param n_sim Number of Monte Carlo simulations (default to 10,000).
+#' @param alpha Significance level, in (0,1).
+#'
+#' @returns A single numeric value corresponding to the
+#'   \eqn{(1 - \alpha)} quantile of the maximum absolute standard normal
+#'   distribution.
+qtmax <- function(p,
+                  n_sim = 10000,
+                  alpha) {
+  z <- matrix(rnorm(p * n_sim), nrow = p, ncol = n_sim)
+  tmaxs <- apply(abs(z), 2, max)
+
+  quantile(tmaxs, probs = 1 - alpha, names = FALSE)
+}
+
+#' Compute Group Average Treatment Effects (GATE) via Quantile Binning + OLS
+#'
+#' Computes group-specific average effects by partitioning a scalar covariate
+#' `X` into quantile-defined bins, regressing `Y` on bin indicators
+#' (no intercept), and forming pointwise and simultaneous confidence intervals
+#' using robust (HC/White) standard errors.
+#'
+#' @param X Scalar running/heterogeneity variable used to define quantile bins
+#' @param Y Outcome variable to be regressed on the bin indicators.
+#' @param max_grid Integer >= 2. Number of quantile segments used to partition `X`.
+#' @param alpha ignificance level for confidence intervals, in (0,1). Default to
+#' `0.05` corresponds to 95% intervals.
+#' @param n_sim Number of Monte Carlo draws used by `qtmax()` to approximate
+#' the critical value for the simultaneous confidence band.
+#'
+#' @returns A list with:
+#'   * `beta_hat`: Vector of estimated bin effects (length `max_grid`).
+#'   * `ghat_lower_point`, `ghat_upper_point`: Pointwise CI bounds.
+#'   * `ghat_lower`, `ghat_upper`: Simultaneous CI bounds.
+#'   * `crit_val`: Simultaneous critical value used.
+#'   * `grid`: Quantile cutpoints used to form bins (length `max_grid + 1`).
+group_average_treatment_effect <- function(X,
+                                           Y,
+                                           max_grid = 5,
+                                           alpha = 0.05,
+                                           n_sim = 10000) {
+  grid <- quantile(X, probs = c((0:max_grid) / max_grid))
+  Xraw <- matrix(NA, nrow = length(Y), ncol = length(grid) - 1)
+
+  # Matrix with quantile-defined bin in which each obs belongs to
+  for (k in 2:((length(grid)))) {
+    Xraw[, k - 1] <- sapply(X, function(x) ifelse(x >= grid[k - 1] & x < grid[k], 1, 0))
+  }
+  k <- length(grid)
+  Xraw[, k - 1] <- sapply(X, function(x) ifelse(x >= grid[k - 1] & x <= grid[k], 1, 0))
+
+  ols_fit <- lm(Y ~ Xraw - 1)
+  coefs <- coef(ols_fit)
+  vars <- names(coefs)
+  hcv_coefs <- sandwich::vcovHC(ols_fit, type = "HC")
+  coefs_se <- sqrt(diag(hcv_coefs)) # White std errors
+  ## this is an identity matrix
+  c_coefs <- (diag(1 / coefs_se)) %*% hcv_coefs %*% (diag(1 / coefs_se))
+
+  # regression estimate: GATE
+  tes <- coefs
+  tes_se <- coefs_se
+  tes_cor <- c_coefs
+
+  # Simultaneous Confidence Interval
+  crit_val <- qtmax(p = ncol(tes_cor), n_sim = n_sim, alpha = 0.05)
+  tes_ucb <- tes + crit_val * tes_se
+  tes_lcb <- tes - crit_val * tes_se
+
+  # Pointwise Confidence Interval
+  tes_uci <- tes + qnorm(1 - alpha / 2) * tes_se
+  tes_lci <- tes + qnorm(alpha / 2) * tes_se
+
+  list(
+    beta_hat = coefs, # GATE (point estimate)
+    ghat_lower_point = tes_lci, # Pointwise Confidence Interval (lower bound)
+    ghat_upper_point = tes_uci, # Pointwise Confidence Interval (upper bound)
+    ghat_lower = tes_lcb, # Simultaneous Confidence Interval (lower bound)
+    ghat_upper = tes_ucb, # Simultaneous Confidence Interval (upper bound)
+    crit_val = crit_val
+  )
+}
+```
+
+
+## Functions for Monte Carlo Simulation Workflow
+
+```{r define-mc-functions}
+#| code-fold: true
+#| code-summary: Core functions and metrics computation for Monte Carlo simulation workflow
+#' Compute Performance Metrics for Propensity Score and Outcome Models
+#'
+#' @description
+#' Evaluates error metrics and calibration performance for estimated nuisance
+#' models within a single simulation iteration.
+#'
+#' @param y Numeric vector of observed outcomes.
+#' @param d Numeric vector of binary treatment indicators (\eqn{D \in \{0, 1\}}).
+#' @param m_true Numeric vector of ground-truth propensity scores.
+#' @param m_pred Numeric vector of estimated (and potentially calibrated) propensity scores.
+#' @param g0_pred Numeric vector of estimated potential outcomes under control (\eqn{\hat{g}_0(X)}).
+#' @param g1_pred Numeric vector of estimated potential outcomes under treatment (\eqn{\hat{g}_1(X)}).
+#' @param g_name Character string specifying the outcome learner used.
+#' @param m_name Character string specifying the propensity score learner used.
+#' @param alg_info Single-row data frame/tibble containing `algorithm_name` and `calib_name`.
+#'
+#' @return A single-row tibble containing RMSE for \eqn{g_0}, \eqn{g_1},
+#' \eqn{m}, Brier score, ECE (width & quantile), Kullback-Leibler divergence,
+#' and score bounds.
+#'
+#' @md
+compute_simul_metrics <- function(y,
+                                  d,
+                                  m_true,
+                                  m_pred,
+                                  g0_pred,
+                                  g1_pred,
+                                  g_name,
+                                  m_name,
+                                  alg_info) {
+  tibble(
+    g_name         = g_name,
+    m_name         = m_name,
+    algorithm_name = alg_info$algorithm_name,
+    calib_name     = alg_info$calib_name,
+    # Metrics for outcome models
+    rmse_g0        = sqrt(mean((y - g0_pred)^2)),
+    rmse_g1        = sqrt(mean((y - g1_pred)^2)),
+    # Metrics for propensity score models
+    rmse_m         = sqrt(mean((m_true - m_pred)^2)),
+    brier_m        = gmish::brier(pred = m_pred, obs = d),
+    ece_width_m    = compute_ece(d = d, scores = m_pred, n_bins = 10, binning = "width"),
+    ece_quantile_m = compute_ece(d = d, scores = m_pred, n_bins = 10, binning = "quantile"),
+    kl_m           = kullback_leibler(true_probas = m_true, scores = m_pred),
+    min_m          = min(m_pred),
+    max_m          = max(m_pred)
+  )
+}
+
+
+#' Compute Group Average Treatment Effects (GATE)
+#'
+#' @description
+#' Constructs orthogonalized doubly robust signals and computes group average
+#' treatment effects conditioned on a covariate feature.
+#'
+#' @param y Numeric vector of observed outcomes.
+#' @param d Numeric vector of binary treatment indicators (\eqn{D \in \{0, 1\}}).
+#' @param x_g Numeric vector of the conditioning covariate used for grouping.
+#' @param g0_pred Numeric vector of estimated potential outcomes under control (\eqn{\hat{g}_0(X)}).
+#' @param g1_pred Numeric vector of estimated potential outcomes under treatment (\eqn{\hat{g}_1(X)}).
+#' @param m_pred Numeric vector of estimated propensity scores.
+#' @param g_name Character string specifying the outcome learner used.
+#' @param m_name Character string specifying the propensity score learner used.
+#' @param alg_info Single-row data frame/tibble containing `algorithm_name` and `calib_name`.
+#'
+#' @return A single-row tibble containing estimated GATE parameters.
+#'
+#' @export
+compute_simul_gate <- function(y,
+                               d,
+                               x_g,
+                               g0_pred,
+                               g1_pred,
+                               m_pred,
+                               g_name,
+                               m_name,
+                               alg_info) {
+  # Construct orthogonal doubly robust signal
+  robust_signal <- (y - g1_pred) * d / m_pred -
+    (y - g0_pred) * (1 - d) / (1 - m_pred) +
+    g1_pred - g0_pred
+
+  gate_res <- group_average_treatment_effect(X = x_g, Y = robust_signal)
+
+  as_tibble_row(gate_res$beta_hat) |>
+    rename_with(~str_replace(.x, "Xraw", "gate"), .cols = everything()) |>
+    mutate(
+      g_name         = g_name,
+      m_name         = m_name,
+      algorithm_name = alg_info$algorithm_name,
+      calib_name     = alg_info$calib_name,
+      .before        = "gate1"
+    )
+}
+
+
+#' Resolve Clipping Threshold and Calibration Specification
+#'
+#' @description
+#' Helper function to resolve dynamic clipping bounds (derived from Platt or Beta
+#' calibration ranges in preceding loops) or default static thresholds.
+#'
+#' @param calib_row Single-row data frame specifying `algorithm_name` and `calib_name`.
+#' @param g_name Character string specifying outcome model learner name.
+#' @param m_name Character string specifying propensity score learner name.
+#' @param range_scores Tibble recording score bounds from previous calibration fits.
+#' @param default_clipping Baseline numeric threshold or 2-element numeric vector.
+#'
+#' @return A list with elements `clip_threshold` and `calib_type`.
+#'
+#' @export
+resolve_clipping_and_calib <- function(calib_row,
+                                       g_name,
+                                       m_name,
+                                       range_scores,
+                                       default_clipping) {
+  if (calib_row$calib_name %in% c("uncalib-platt-clip", "uncalib-beta-clip")) {
+    target_calib <- ifelse(str_detect(calib_row$calib_name, "platt"), "platt", "beta")
+
+    range_calib <- range_scores |>
+      filter(
+        g_name == !!g_name,
+        m_name == !!m_name,
+        algorithm_name == calib_row$algorithm_name,
+        calib_name == !!target_calib
+      )
+
+    list(
+      clip_threshold = c(range_calib$min, range_calib$max),
+      calib_type     = "uncalibrated"
+    )
+  } else {
+    list(
+      clip_threshold = default_clipping,
+      calib_type     = calib_row$calib_name
+    )
+  }
+}
+
+
+#' Single Monte Carlo Simulation Iteration
+#'
+#' @description
+#' Runs a single simulation replicate for a specified DGP. Fits multiple outcome
+#' and propensity score models, applies calibration routines across $K$-folds,
+#' and evaluates ATE, GATE, and model quality metrics.
+#'
+#' @param dgp_name Character string identifying the DGP function (e.g.,
+#'   `"belloni"`).
+#' @param dgp_params List of parameters passed to the DGP data generation function.
+#' @param clipping_threshold Default threshold or range for propensity score clipping.
+#'   Default is `1e-12`.
+#' @param n_folds Integer specifying the number of folds for cross-fitting.
+#'   Default is `5`.
+#' @param equilibrium Logical indicating if outcome models account for
+#'   equilibrium conditions. Default is `TRUE`.
+#' @param seed Optional integer to set pseudo-random state for reproducible replication.
+#'
+#' @details
+#' Algorithms supported include:
+#'   *`alg-1-uncalibrated`: Standard DML without propensity score calibration.
+#'   *`alg-3-cross-fitted-calib`: DML incorporating cross-fitted propensity
+#'     score calibration (Isotonic, Platt, Beta, or custom clip).
+#'
+#' @return A named list containing:
+#' * `ate`: Tibble of estimated ATE values across models and algorithms.
+#' * `gate`: Tibble of estimated GATE parameters across models and algorithms.
+#' * `metrics`:  Tibble of error and calibration metrics for nuisance models.
+#' * `dgp_params`: Input DGP parameter list.
+#' * `range_scores`: Tibble recording minimum and maximum predicted propensity scores.
+#' * `clipping_threshold`: Input clipping threshold configuration.
+#'
+#' @md
+simul <- function(dgp_name,
+                  dgp_params,
+                  clipping_threshold = 1e-12,
+                  n_folds = 5,
+                  equilibrium = TRUE,
+                  seed = NULL) {
+
+  if (!is.null(seed)) set.seed(seed)
+
+  # 1. Data Generation & Formatting ----
+  if (dgp_name == "belloni") {
+    data_raw <- gen_data_belloni(
+      n   = dgp_params$n,
+      p   = dgp_params$p,
+      Rd2 = dgp_params$Rd2,
+      Ry2 = dgp_params$Ry2,
+      rho = dgp_params$rho,
+      seed = seed
+    )
+    tb_data   <- format_data_belloni(data_raw)
+    ate_true  <- data_raw$ate_true
+    gate_true <- data_raw$gate_true
+  } else {
+    stop(sprintf("Unsupported DGP specification: '%s'", dgp_name))
+  }
+
+  # Method Configurations
+  calib_methods <- tribble(
+    ~algorithm_name,            ~calib_name,
+    'alg-1-uncalibrated',       'uncalibrated',
+    'alg-3-cross-fitted-calib', 'isotonic',
+    'alg-3-cross-fitted-calib', 'platt',
+    'alg-3-cross-fitted-calib', 'uncalib-platt-clip',
+    'alg-3-cross-fitted-calib', 'beta',
+    'alg-3-cross-fitted-calib', 'uncalib-beta-clip',
+    'alg-3-cross-fitted-calib', 'joint-platt'
+  )
+
+  g_names <- c("ols", "lasso", "rf", "lgbm")
+  m_names <- c("logit", "rf_classif", "rf_reg", "lgbm")
+
+  # Fold Partitioning
+  folds     <- sample(rep(1:n_folds, length.out = nrow(tb_data)))
+  ind_folds <- map(seq_len(n_folds), ~which(folds == .x)) |> list_c()
+
+  # 2. Fit Outcome & Propensity Score Learners ----
+  models_g <- map(
+    g_names,
+    ~estim_g(
+      data = tb_data, learner_g_name = .x, folds = folds, equilibrium = equilibrium
+    )) |> set_names(g_names)
+  models_m <- map(
+    m_names, ~estim_m(data = tb_data, learner_m_name = .x, folds = folds)
+    ) |> set_names(m_names)
+
+  # Result Storage Accumulators
+  ate_list          <- list()
+  gate_list         <- list()
+  metrics_list      <- NULL
+  range_scores <- NULL
+  # calib_curves_list <- NULL
+
+  # 3. Main Evaluation Loops ----
+  for (g_name in g_names) {
+    for (m_name in m_names) {
+      for (i_algo in seq_len(nrow(calib_methods))) {
+
+        alg_info <- calib_methods[i_algo, ]
+
+        # Determine current clipping threshold and calibration settings
+        calib_cfg <- resolve_clipping_and_calib(
+          calib_row        = alg_info,
+          g_name           = g_name,
+          m_name           = m_name,
+          range_scores     = range_scores,
+          default_clipping = clipping_threshold
+        )
+
+        # Estimate Nuisances
+        nuisance_curr <- nuisance_estim(
+          g_name             = g_name,
+          m_name             = m_name,
+          algorithm_name     = alg_info$algorithm_name,
+          calib_name         = calib_cfg$calib_type,
+          data               = tb_data,
+          folds              = folds,
+          n_folds            = n_folds,
+          models_g           = models_g,
+          models_m           = models_m,
+          clipping_threshold = calib_cfg$clip_threshold
+        )
+
+        # Extract predictions across folds
+        g0_pred <- map(nuisance_curr, "g0_pred_k") |> list_c()
+        g1_pred <- map(nuisance_curr, "g1_pred_k") |> list_c()
+        geqb_pred <- map(nuisance_curr, "geqb_pred_k") |> list_c()
+        m_pred  <- map(nuisance_curr, "m_pred_k") |> list_c()
+
+        # Observed targets & true values
+        y      <- tb_data$y[ind_folds]
+        d      <- tb_data$d[ind_folds]
+        m_true <- data_raw$m_0[ind_folds]
+
+        # ATE Computation
+        ate_curr <- compute_ate_folds(pred_folds = nuisance_curr, n_folds = n_folds) |>
+          mutate(
+            g_name         = g_name,
+            m_name         = m_name,
+            algorithm_name = alg_info$algorithm_name,
+            calib_name     = alg_info$calib_name
+          )
+        ate_list[[length(ate_list) + 1]] <- ate_curr
+
+        # GATE Computation
+        gate_curr <- compute_simul_gate(
+          y = y, d = d, x_g = tb_data$X1[ind_folds],
+          g0_pred = g0_pred, g1_pred = g1_pred, m_pred = m_pred,
+          g_name = g_name, m_name = m_name, alg_info = alg_info
+        )
+        gate_list[[length(gate_list) + 1]] <- gate_curr
+
+        # Metrics Computation
+        metrics_curr <- compute_simul_metrics(
+          y = y, d = d, m_true = m_true, m_pred = m_pred,
+          g0_pred = g0_pred, g1_pred = g1_pred,
+          g_name = g_name, m_name = m_name, alg_info = alg_info
+        )
+        metrics_list[[length(metrics_list) + 1]] <- metrics_curr
+
+        # Track predicted range scores
+        range_scores_curr <- tibble(
+          g_name         = g_name,
+          m_name         = m_name,
+          algorithm_name = alg_info$algorithm_name,
+          calib_name     = alg_info$calib_name,
+          min            = metrics_curr$min_m,
+          max            = metrics_curr$max_m
+        )
+        range_scores <- range_scores |>
+          bind_rows(range_scores_curr)
+
+        # # Calibration curve
+        # tb_current <- tibble(
+        #   id = ind_folds,
+        #   y = y,
+        #   d = d,
+        #   m_true = m_true,
+        #   m_pred = m_pred
+        # ) |>
+        #   mutate(
+        #     g_name = g_name,
+        #     m_name = m_name,
+        #     algorithm_name = alg_info$algorithm_name,
+        #     calib_name = alg_info$calib_name
+        #   )
+        # calib_pred <- calibration_curve(data = tb_current, d_name = "d", p = m_pred)
+        # calib_curves_curr <- list(
+        #   g_name = g_name,
+        #   m_name = m_name,
+        #   algorithm_name = alg_info$algorithm_name,
+        #   calib_name = alg_info$calib_name,
+        #   calib_pred = calib_pred
+        # )
+        # calib_curves_list[[length(calib_curves_list) + 1]] <- calib_curves_curr
+      }
+    }
+  }
+
+  # 4. Final Output Construction ----
+  list(
+    ate = bind_rows(ate_list) |>
+      mutate(seed = seed, ate_true = ate_true),
+    gate = bind_rows(gate_list) |>
+      mutate(
+        seed       = seed,
+        gate_true1 = gate_true[1],
+        gate_true2 = gate_true[2],
+        gate_true3 = gate_true[3],
+        gate_true4 = gate_true[4],
+        gate_true5 = gate_true[5]
+      ),
+    metrics            = bind_rows(metrics_list) |> mutate(seed = seed),
+    dgp_params         = dgp_params,
+    range_scores       = range_scores,
+    # calib_curves       = calib_curves_list,
+    clipping_threshold = clipping_threshold
+  )
+}
+```
+

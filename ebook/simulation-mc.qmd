@@ -1,0 +1,186 @@
+# Simulations {#sec-sim}
+
+
+:::{.callout-warning}
+
+### Warning
+
+The estimations shown in this chapter were run outside the compilation of this document. The codes are shown here, but they are not evaluated to create this HTML page.
+
+In total, we consider 6 different configuration for the data shown in [Chapter -@sec-sim-functions]. The first 3 configurations take about 2h30 to run each, while the 3 next take about 12h each.
+
+:::
+
+:::{.callout-note collapse=true}
+
+## Required packages
+
+Some required packages:
+```{r load-packages}
+library(tidyverse)
+library(pbapply)
+library(hdm)
+library(randomForest)
+library(xgboost)
+library(sandwich)
+library(philentropy)
+library(parallel)
+library(gmish)
+library(ebal)
+library(MASS)
+
+# To install gmish:
+# devtools::install_git("gweissman/gmish")
+```
+
+:::
+
+The functions presented in [Chapter -@sec-sim-functions] are all stored in scripts in the `scripts/simulation` directory. We load those.
+
+```{r}
+# Source modular components
+source("../scripts/simulation/01_dgp.R")
+source("../scripts/simulation/02_learners_g.R")
+source("../scripts/simulation/03_learners_m.R")
+source("../scripts/simulation/04_calibration.R")
+source("../scripts/simulation/05_metrics.R")
+source("../scripts/simulation/06_causal-estimators.R")
+source("../scripts/simulation/07_simulation_helper.R")
+```
+
+
+## Parameter Grid Setup
+
+We define a grid with varying values for some parameters that influence either the data generating process ($n$, $p$, $R_d^2$) or whether propensity scores are clipped. For the latter, note that we set a very small value, which corresponds to no clipping. A value of 0 may produce issues when computing the AIPW estimator or the ATE. Also, note that for Beta calibration, the number of drawn data needs to be quite large. We tried $n=100$ and $n=200$ but this leads to issued when trying to calibrate with Beta calibration.
+
+```{r define-grid}
+grid <- expand_grid(
+  n    = c(2000),
+  p    = c(20, 200),
+  Rd2  = c(0.2, 0.5, 0.8),
+  clip = 1e-12 # 1e-12 corresponds to virtually no clipping
+)
+grid
+```
+
+
+The results are stored in the `output/simul-klassen/` folder.
+```{r define-output_dir}
+output_dir <- "../output/simul-klassen/"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+```
+
+## Parallel Setup
+
+For each configuration of the generated data, we run 1,000 replications of the Monte Carlo simulations.
+```{r define-nb_simul}
+nb_simul <- 1000
+```
+
+
+Since these replications are independent from one another, they can be run in parallel. The helper functions need to be sent to the clusters.
+
+
+
+```{r parallel-setup, eval=FALSE}
+ncl <- max(1, detectCores() - 1)
+cl  <- makeCluster(ncl)
+# Guarantee cluster shutdown even if an error occurs mid-script
+on.exit(stopCluster(cl), add = TRUE)
+
+# Load dependencies across all worker nodes
+clusterEvalQ(cl, {
+  library(tidyverse)
+  library(hdm)
+  library(randomForest)
+  library(xgboost)
+  library(sandwich)
+  library(philentropy)
+}) |> invisible()
+
+# Export custom helper and estimation functions
+functions_to_export <- c(
+  "simul",
+  # Data Generation
+  "gen_data_belloni", "format_data_belloni",
+  # Learners g
+  "estim_g", "estim_g_ols", "predict_g_ols",
+  "estim_g_lasso", "predict_g_lasso",
+  "estim_g_rf", "predict_g_rf",
+  "estim_g_lgbm", "predict_g_lgbm",
+  # Learners m
+  "estim_m",
+  "estim_m_logit", "predict_m_logit",
+  "estim_m_rf_classif", "predict_m_rf_classif",
+  "estim_m_rf_classif", "predict_m_rf_classif",
+  "estim_m_rf_reg", "predict_m_rf_reg",
+  "estim_m_lgbm", "predict_m_lgbm",
+  # Calibration
+  "calibrate", "nuisance_estim", "alg_1_uncalibrated",
+  "alg_3_cross_fitted_calib", "calibration_curve",
+  # Metrics
+  "compute_ece", "kullback_leibler",
+  # Causal Estimators
+  "compute_ate_reg", "compute_ate_ipw", "compute_ate_aipw",
+  "compute_ate_ipw_normalized", "compute_ate_aipw_normalized",
+  "compute_ate_eqb_reg", "compute_ate_eqb_ipw", "compute_ate_eqb_aipw",
+  "compute_ate_folds",
+  "qtmax", "group_average_treatment_effect",
+  # Simulation Helpers
+  "compute_simul_metrics", "compute_simul_gate", "resolve_clipping_and_calib"
+)
+
+clusterExport(cl, functions_to_export)
+```
+
+
+## Main Simulation Loop
+
+```{r, eval=FALSE}
+cat(sprintf("Starting Monte Carlo simulations (%d combinations across %d cores)...\n\n",
+            nrow(grid), ncl))
+
+for (i_grid in 2:nrow(grid)) {
+  cat(
+    sprintf(
+      "## Simulation %d/%d (n=%d, p=%d, Rd2=%.1f, clip=%g)\n",
+      i_grid, nrow(grid), grid$n[i_grid], grid$p[i_grid],
+      grid$Rd2[i_grid], grid$clip[i_grid])
+  )
+
+  dgp_params <- list(
+    n   = grid$n[i_grid],
+    p   = grid$p[i_grid],
+    Rd2 = grid$Rd2[i_grid],
+    Ry2 = 0.5,
+    rho = 0.5
+  )
+
+  clipping_threshold <- grid$clip[i_grid]
+
+  # Export current parameter state to worker nodes
+  clusterExport(cl, c("dgp_params", "clipping_threshold"), envir = environment())
+
+  # Run replicates in parallel
+  res_tmp <- pblapply(1:nb_simul, FUN = function(seed) {
+    simul(
+      dgp_name           = "belloni",
+      dgp_params         = dgp_params,
+      clipping_threshold = clipping_threshold,
+      n_folds            = 5,
+      seed               = seed
+    )
+  }, cl = cl)
+
+  # Save individual grid output iteration
+  save(res_tmp, file = str_c(output_dir, i_grid, ".rda"))
+}
+
+cat("\nSimulations completed successfully.\n")
+```
+
+
+
+

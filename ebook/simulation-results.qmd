@@ -1,0 +1,627 @@
+# Results
+
+:::{.callout-note collapse=true}
+
+## Required packages and `theme_paper()`{.R} function.
+
+Some required packages:
+```{r load-packages}
+library(tidyverse)
+library(gt)
+library(glue)
+```
+
+We define a theme for ggplot2 graphs.
+```{r}
+#' Theme for ggplot2
+#'
+#' @param ... arguments passed to the theme function
+#' @export
+#' @importFrom ggplot2 element_rect element_text element_blank element_line unit
+#'   rel
+theme_paper <- function (...) {
+  ggthemes::theme_base() +
+    theme(
+      legend.background = element_rect(
+        fill = "transparent", linetype="solid", colour ="black"),
+      legend.position = "bottom",
+      legend.direction = "horizontal",
+      legend.box = "horizontal",
+      legend.key = element_blank(),
+      panel.background = element_rect(fill = NA),
+      strip.background = element_rect(fill = NA, color = NA)
+    )
+}
+```
+
+
+:::
+
+
+The results of the simulations from [Chapter -@sec-sim] are stored in the `output/simul-klassen` folder.
+```{r define-output_dir}
+output_dir <- "../output/simul-klassen/"
+```
+
+
+## Load and Aggregate the Results
+
+```{r load-results}
+res <- list()
+
+for (i_grid in 1:6) {
+  cat(
+    sprintf(
+      "Load results from simulation (%d/%d)...\n\n",
+      i_grid, nrow(grid)
+    )
+  )
+  file_path <- str_c(output_dir, i_grid, ".rda")
+
+  if (!file.exists(file_path)) next
+
+  load(file_path) # Loads 'res_tmp'
+
+  for (j in seq_along(res_tmp)) {
+    # Extract DGP parameters
+    cur_dgp  <- res_tmp[[j]]$dgp_params
+    cur_clip <- res_tmp[[j]]$clipping_threshold
+
+    # Annotate ATE table
+    res_tmp[[j]]$ate <- res_tmp[[j]]$ate |>
+      mutate(
+        n                  = cur_dgp$n,
+        p                  = cur_dgp$p,
+        Rd2                = cur_dgp$Rd2,
+        Ry2                = cur_dgp$Ry2,
+        rho                = cur_dgp$rho,
+        clipping_threshold = cur_clip
+      )
+
+    # Annotate GATE table
+    res_tmp[[j]]$gate <- res_tmp[[j]]$gate |>
+      mutate(
+        n                  = cur_dgp$n,
+        p                  = cur_dgp$p,
+        Rd2                = cur_dgp$Rd2,
+        Ry2                = cur_dgp$Ry2,
+        rho                = cur_dgp$rho,
+        clipping_threshold = cur_clip
+      )
+
+    # Annotate Metrics table
+    res_tmp[[j]]$metrics <- res_tmp[[j]]$metrics |>
+      mutate(
+        n                  = cur_dgp$n,
+        p                  = cur_dgp$p,
+        Rd2                = cur_dgp$Rd2,
+        Ry2                = cur_dgp$Ry2,
+        rho                = cur_dgp$rho,
+        clipping_threshold = cur_clip
+      )
+  }
+
+  res <- c(res, res_tmp)
+}
+
+# Combine into master dataframes
+res_ate     <- map(res, "ate") |> list_rbind()
+res_gate    <- map(res, "gate") |> list_rbind()
+res_metrics <- map(res, "metrics") |> list_rbind()
+```
+## Bias of the Estimator of the ATE
+
+
+```{r define-fmt_num}
+#| code-fold: true
+#| code-summary: The `fmt_num()`{.R} function.
+#' Format numbers
+#'
+#' |x| >= 100: 0 digit;
+#' |x| >= 10: 1 digit;
+#' otherwise: 3 digits
+fmt_num <- function(x) {
+  dplyr::case_when(
+    abs(x) >= 100 ~ sprintf("%.0f", x),
+    abs(x) >= 10  ~ sprintf("%.1f", x),
+    TRUE          ~ sprintf("%.3f", x)
+  )
+}
+```
+
+
+:::{.callout-note}
+
+### Replication of Figure 1
+
+The following figure is a replication of Figure 1 from the paper.
+
+:::
+
+@fig-fig1-histogram shows the distribution of the bias $\hat{\tau}_{\texttt{aipw}} - \hat{\tau}$ of the AIPW estimator of the ATE across the Monte Carlo simulations when both the outcome and the propensity score functions are estimated with boosting, without calibration of the propensity scores on the left and with isotonic recalibration with the cross-fitting procedure (@dmlChernozhukov2018) on the right.
+
+
+
+```{r}
+#| code-fold: true
+#| code-summary: Codes to replicate Figure 1 from the paper.
+#| label: fig-fig1-histogram
+#| fig-caption: "Empirical distribution of the estimation error of the AIPW estimator of the ATE over 1,000 replications, when both nuisance functions are estimated by gradient boosting (LightGBM), without recalibration of the propensity scores (left panel) and with isotonic recalibration within the cross-fitting procedure (right panel). The true value corresponds to the dashed vertical line. Design: n= 2000, p= 200, R2d = 0.2"
+#| fig-width: 9
+#| fig-height: 4
+p_hist <- ggplot(
+  data = res_ate |>
+    filter(
+      g_name == "lgbm", m_name == "lgbm",
+      calib_name %in% c("uncalibrated", "isotonic"),
+      n == 2000, p == 200, Rd2 == 0.2
+    ) |>
+    mutate(
+      delta_ate_aipw = ate_aipw - ate_true,
+      calib_name = factor(
+        calib_name,
+        levels = c("uncalibrated", "isotonic"),
+        labels = c("Without calibration", "With calibration (isotonic)")
+      )
+    ),
+  mapping = aes(x = delta_ate_aipw)
+) +
+  geom_histogram(
+    colour = "black", fill = "gray", linewidth = .4, bins = 30
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  facet_wrap(~ calib_name) +
+  coord_cartesian(xlim = c(-1, .25)) +
+  scale_x_continuous(breaks = seq(-1, .2, by = .2)) +
+  labs(
+    x = latex2exp::TeX("$\\hat{\\tau}_{aipw} - \\hat{\\tau}$"),
+    y = "Frequency"
+  ) +
+  theme_paper() +
+  theme(panel.grid.major.y = element_line(colour = "gray", linewidth = .2))
+
+p_hist
+```
+
+
+:::{.callout-note}
+
+### Replication of Tables 1 and 5
+
+The following codes allow to replicate content from Tables 1 and 5 in the paper.
+
+Table 1: Estimator = AIPW, p = 200, R2d = 0.2;
+Table 5: Estimator = AIPW, p = 20, R2d = 0.2.
+
+:::
+
+
+
+```{r define-get_table_mc}
+#| code-fold: true
+#| code-summary: The `get_table_mc()`{.R} function used to produce the Tables.
+get_table_mc <- function(n_val, p_val, rd2_val, estimator) {
+  
+  table_data <- res_ate |>
+    filter(
+      n == n_val,
+      p == p_val,
+      Rd2 == rd2_val
+    ) |>
+    mutate(
+      calib_name = factor(
+        calib_name, 
+        levels = c("uncalibrated", "isotonic", "platt", "uncalib-platt-clip", "beta", "uncalib-beta-clip", "joint-platt"),
+        labels = c("Uncalibrated", "Isotonic", "Platt", "Uncalibrated Platt-clip", "Beta", "Uncalibrated Beta-clip", "Outcome-informed")
+      ),
+      g_name = factor(
+        g_name,
+        levels = c("ols", "lasso", "rf", "lgbm"),
+        labels = c("Outcome: OLS", "Outcome: Lasso", "Outcome: Random Forest", "Outcome: Boosting")
+      ),
+      m_name = factor(
+        m_name,
+        levels = c("logit", "rf_classif", "rf_reg", "lgbm"),
+        labels = c("Logit", "RF Classif", "RF Reg", "Boosting")
+      )
+    ) |> 
+    group_by(g_name, m_name, calib_name) |>
+    mutate(
+      estim_ate = .data[[paste0("ate_", estimator)]]
+    ) |>
+    summarise(
+      bias = mean(estim_ate - ate_true),
+      sd   = sd(estim_ate - ate_true),
+      .groups = "drop"
+    ) |>
+    pivot_longer(
+      cols = c(bias, sd),
+      names_to = "metric",
+      values_to = "value"
+    ) |>
+    unite(
+      col = "column",
+      calib_name,
+      metric,
+      sep = "__"
+    ) |>
+    pivot_wider(
+      names_from = column,
+      values_from = value
+    )
+  
+  formatted_table <- table_data |>
+    gt(
+      rowname_col = "m_name",
+      groupname_col = "g_name"
+    ) |>
+    tab_spanner_delim(
+      delim = "__",
+      columns = contains("__")
+    ) |>
+    cols_label(
+      .list = setNames(
+        ifelse(
+          endsWith(names(table_data), "__bias"),
+          "Bias",
+          ifelse(
+            endsWith(names(table_data), "__sd"),
+            "(SD)",
+            names(table_data)
+          )
+        ),
+        names(table_data)
+      )
+    ) |>
+    fmt_number(
+      columns = ends_with("__bias"),
+      decimals = 3
+    ) |>
+    fmt_number(
+      columns = ends_with("__sd"),
+      decimals = 3,
+      pattern = "({x})"
+    ) |>
+    cols_align(
+      align = "center",
+      columns = contains("__")
+    ) |>
+    tab_header(
+      title = md("**Monte Carlo Simulation Results**"),
+      subtitle = md(
+        glue("Estimator: **{toupper(estimator)}** | *N* = {n_val}, *P* = {p_val}, Rd2 = {rd2_val}")
+      )
+    ) |>
+    opt_stylize(style = 1, color = "gray") |>
+    tab_options(
+      column_labels.font.weight = "bold",
+      row_group.font.weight = "bold"
+    )
+  
+  formatted_table
+}
+```
+
+
+```{r}
+#| results: 'asis'
+#| echo: false
+#| message: false
+#| warning: false
+# Parameter grid
+estimators <- c("aipw", "ipw", "aipw_norm")
+p_vals     <- c(20, 200)
+rd2_vals   <- c(0.2, 0.5, 0.8)
+n_val      <- 2000
+
+# Outer Tabset: Estimators
+cat("\n::: {.panel-tabset}\n\n")
+
+for (est in estimators) {
+  cat("\n## Estimator: ", toupper(est), "\n\n")
+  
+  # Middle Tabset: P values
+  cat("\n::: {.panel-tabset}\n\n")
+  
+  for (p in p_vals) {
+    cat("\n### P = ", p, "\n\n")
+    
+    # Inner Tabset: Rd² values
+    cat("\n::: {.panel-tabset}\n\n")
+    
+    for (rd2 in rd2_vals) {
+      cat("\n#### Rd² = ", rd2, "\n\n")
+      
+      # Generate GT Table
+      tbl <- get_table_mc(
+        n_val     = n_val, 
+        p_val     = p, 
+        rd2_val   = rd2, 
+        estimator = est
+      )
+      
+      # Print GT table HTML explicitly inside 'asis' environment
+      print(htmltools::tagList(tbl))
+      cat("\n\n")
+    }
+    
+    # Close Inner Tabset (R²)
+    cat("\n:::\n\n")
+  }
+  
+  # Close Middle Tabset (P)
+  cat("\n:::\n\n")
+}
+
+# Close Outer Tabset (Estimators)
+cat("\n:::\n\n")
+```
+
+
+
+
+:::{.callout-note}
+
+### Replication of Table 2
+
+The following codes allow to replicate content from Table 2
+
+Table 2: p = 200, Rd2 = 0.8 (limited overlap).
+
+The estimators and calibration of scores are the following:
+
+| Label | Estimator | Calibration | Clipping |
+| :---: | :-------: | :---------: | :------: |
+| Uncalibrated | AIPW | Uncalibrated | No clipping |
+| Hájek | Normalized AIPW | Uncalibrated | No clipping |
+| Clipped | AIPW | Uncalibrated | Clipped using range of scores calibrated with Platt scaling |
+| Isotonic | AIPW | Isotonic | No clipping |
+
+:::
+
+
+```{r define-get_col_table}
+#| code-fold: true
+#| code-summary: The `get_table_mc()`{.R} and `get_formatted_table()`{.R} functions used to produce the Tables and the definition of the configurations for a set of $n$, $p$ and $R_d^2$.
+get_col_table <- function(estimator, 
+                          calib, 
+                          lab,
+                          n_val = 2000,
+                          p_val = 200,
+                          rd2_val = 0.8) {
+  res_ate |>
+    filter(
+      n == n_val,
+      p == p_val,
+      Rd2 == rd2_val,
+      calib_name == !!calib
+    ) |> 
+    mutate(
+      estim_ate = !!sym(estimator)
+    ) |>
+    group_by(g_name, m_name) |> 
+    summarise(
+      bias = mean(estim_ate - ate_true),
+      sd   = sd(estim_ate - ate_true),
+      .groups = "drop"
+    ) |> 
+    pivot_longer(
+      cols = c(bias, sd),
+      names_to = "metric",
+      values_to = "value"
+    ) |> 
+    mutate(
+      column = !!lab
+    ) |> 
+    unite(
+      col = "column",
+      column,
+      metric,
+      sep = "__"
+    ) |> 
+    pivot_wider(
+      names_from = column,
+      values_from = value
+    )
+}
+
+get_formatted_table <- function(configs, 
+                                n_val, 
+                                p_val, 
+                                rd2_val) {
+  table_data <- 
+    pmap(configs, function(estimator, calib, lab) {
+      get_col_table(
+        estimator = estimator, calib = calib, lab = lab, 
+        n_val = n_val, p_val = p_val, rd2_val = rd2_val)
+    }) |> 
+    reduce(left_join, by = c("g_name", "m_name")) |> 
+    mutate(
+      g_name = factor(
+        g_name,
+        levels = c("ols", "lasso", "rf", "lgbm"),
+        labels = c("Outcome: OLS", "Outcome: Lasso", "Outcome: Random Forest", "Outcome: Boosting")
+      ),
+      m_name = factor(
+        m_name,
+        levels = c("logit", "rf_classif", "rf_reg", "lgbm"),
+        labels = c("Logit", "RF Classif", "RF Reg", "Boosting")
+      )
+    ) |> 
+    arrange(g_name, m_name)
+  
+  formatted_table <- table_data |>
+    gt(
+      rowname_col = "m_name",
+      groupname_col = "g_name"
+    ) |>
+    tab_spanner_delim(
+      delim = "__",
+      columns = contains("__")
+    ) |>
+    cols_label(
+      .list = setNames(
+        ifelse(
+          endsWith(names(table_data), "__bias"),
+          "Bias",
+          ifelse(
+            endsWith(names(table_data), "__sd"),
+            "(SD)",
+            names(table_data)
+          )
+        ),
+        names(table_data)
+      )
+    ) |>
+    fmt_number(
+      columns = ends_with("__bias"),
+      decimals = 3
+    ) |>
+    fmt_number(
+      columns = ends_with("__sd"),
+      decimals = 3,
+      pattern = "({x})"
+    ) |>
+    cols_align(
+      align = "center",
+      columns = contains("__")
+    ) |>
+    tab_header(
+      title = md("**Monte Carlo Simulation Results**"),
+      subtitle = md(
+        glue("*n* = {n_val}, *p* = {p_val}, Rd² = {rd2_val}")
+      )
+    ) |>
+    opt_stylize(style = 1, color = "gray") |>
+    tab_options(
+      column_labels.font.weight = "bold",
+      row_group.font.weight = "bold"
+    )
+  
+  formatted_table
+}
+
+configs <- tribble(
+  ~estimator, ~calib, ~lab,
+  "ate_aipw",      "uncalibrated",       "Uncalibrated",
+  "ate_aipw_norm", "uncalibrated",       "Hájek",
+  "ate_aipw",      "uncalib-platt-clip", "Clipped",
+  "ate_aipw",      "isotonic",           "Isotonic"
+)
+```
+
+
+```{r}
+#| results: 'asis'
+#| echo: false
+#| message: false
+#| warning: false
+# Parameter grid
+p_vals     <- c(20, 200)
+rd2_vals   <- c(0.2, 0.5, 0.8)
+n_val      <- 2000
+
+# Outer Tabset: P values
+cat("\n::: {.panel-tabset}\n\n")
+
+for (p in p_vals) {
+  cat("\n## P = ", p, "\n\n")
+  
+  # Inner Tabset: Rd² values
+  cat("\n::: {.panel-tabset}\n\n")
+  
+  for (rd2 in rd2_vals) {
+    cat("\n### Rd² = ", rd2, "\n\n")
+    
+    # Generate GT Table
+    tbl <- get_formatted_table(
+      configs = configs,
+      n_val     = n_val, 
+      p_val     = p, 
+      rd2_val   = rd2
+    )
+    
+    # Print GT table HTML explicitly inside 'asis' environment
+    print(htmltools::tagList(tbl))
+    cat("\n\n")
+  }
+  
+  # Close Inner Tabset (R²)
+  cat("\n:::\n\n")
+}
+
+# Close Outer Tabset (P)
+cat("\n:::\n\n")
+
+```
+
+
+:::{.callout-note}
+
+### Replication of Table 3
+
+This code replicates Table 3.
+
+:::
+
+```{r}
+#| code-fold: true
+#| code-summary: Codes to replicate Table 3 from the paper.
+#| label: tbl-enforce
+#| tbl-caption: "Enforcement attempts in the residual-bias regime ($n=2000$, $p=200$): bias and standard deviation of the AIPW estimator with isotonic calibration of the score, outcome-informed calibration of the score (logistic recalibration on the score and both outcome predictions), and isotonic calibration of both the score and the outcome regressions (in the spirit of @vanderlaan2024doubly), 1,000 replications."
+table_3 <- res_ate |>
+  filter(
+    n == 2000, p == 200,
+    calib_name %in% c("isotonic", "joint-platt")
+  ) |>
+  filter(
+    (m_name == "lgbm" & g_name == "lgbm" & Rd2 == .8) |
+      (m_name == "rf_classif" & g_name == "lgbm" & Rd2 == .8) |
+      (m_name == "lgbm" & g_name == "lgbm" & Rd2 == .2)
+  ) |>
+  mutate(
+    m_name = factor(m_name, levels = c("lgbm", "rf_classif"), labels = c("LGBM", "RF-Classif")),
+    g_name = factor(g_name, levels = c("lgbm"), labels = c("LGBM")),
+    calib_name = factor(calib_name, levels = c("isotonic", "joint-platt"))
+  ) |>
+  group_by(g_name, m_name, Rd2, calib_name) |>
+  summarise(
+    bias = mean(ate_aipw - ate_true) |> fmt_num(),
+    sd = sd(ate_aipw - ate_true) |> fmt_num(),
+    .groups = "drop"
+  ) |>
+  arrange(desc(Rd2), m_name) |>
+  pivot_wider(names_from = calib_name, values_from = c("bias", "sd"), names_vary = "slowest")
+
+table_3 |> 
+  gt() |>
+  # Group the bias/SD columns under their respective calibration types
+  tab_spanner(
+    label = "Isotonic",
+    columns = c(bias_isotonic, sd_isotonic)
+  ) |>
+  tab_spanner(
+    label = "Joint-Platt",
+    columns = c(`bias_joint-platt`, `sd_joint-platt`)
+  ) |>
+  # Rename the individual sub-columns
+  cols_label(
+    g_name = "Outcome model",
+    m_name = "Score model",
+    Rd2 = "Rd2",
+    bias_isotonic = "Bias",
+    sd_isotonic = "SD",
+    `bias_joint-platt` = "Bias",
+    `sd_joint-platt` = "SD"
+  ) |>
+  # Format numbers to desired decimal places
+  fmt_number(
+    columns = c(bias_isotonic, sd_isotonic, `bias_joint-platt`, `sd_joint-platt`),
+    decimals = 3
+  ) |>
+  # Add table title / caption
+  tab_header(
+    title = "Table 3: Enforcement attempts in the residual-bias regime"
+  )
+```
+

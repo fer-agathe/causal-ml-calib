@@ -1,0 +1,51 @@
+project:
+  type: book
+  output-dir: ../docs
+
+book:
+  title: "Propensity Score Calibration in Causal Machine Learning"
+  subtitle: "What It Fixes, and What It Does Not"
+  author:
+  - name: Arthur Charpentier
+    orcid: 0000-0003-3654-6286
+    affiliations:
+      - name: Université du Québec à Montréal
+  - name: Agathe Fernandes Machado
+    orcid: 0009-0002-9743-9708
+    affiliations:
+      - name: Université du Québec à Montréal
+  - name: Emmanuel Flachaire
+    orcid: 0000-0001-6241-5875
+    affiliations:
+      - name: Aix-Marseille School of Economics, Aix-Marseille Univ.
+  - name: Ewen Gallic
+    orcid: 0000-0003-3740-2620
+    affiliations:
+      - name: Aix-Marseille School of Economics, Aix-Marseille Univ.
+  date: "8/24/2026"
+  chapters:
+    - index.qmd
+    - part: Monte Carlo Simulations
+      chapters:
+      - simulation-functions.qmd
+      - simulation-mc.qmd
+      - simulation-results.qmd
+    - part: Empirical Illustration
+      chapters:
+      - 401k.qmd
+    - references.qmd
+
+bibliography: biblio.bib
+
+fig-cap-location: top
+
+format:
+  html:
+    from: markdown+emoji
+    theme: cosmo
+    html-math-method: mathjax
+    include-in-header:
+    - file: mathjax-color.html
+
+editor: source
+
