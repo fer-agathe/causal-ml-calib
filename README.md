@@ -11,9 +11,10 @@ Replication code and companion e-book for:
 **Abstract.** A recent literature shows that recalibrating machine learning estimates of the propensity score improves double/debiased machine learning (DML) estimators of average treatment effects. This paper asks what calibration can and cannot fix, and how it compares with the weight-stabilization devices routinely used by applied econometricians. Three answers emerge from an elementary bias decomposition and a factorial Monte Carlo design. First, calibration matters for the bias only when both nuisance functions are poorly estimated (with an accurate outcome regression, double robustness protects the AIPW estimator against arbitrarily miscalibrated scores), yet it reduces the standard deviation when the propensity learner produces extreme scores. Second, calibration dominates common practice under limited overlap: Hájek normalization tames the variance explosions caused by extreme scores but leaves most of the bias, whereas calibration removes both at once and without a tuning parameter, unlike trimming. Third, calibration is necessary but not sufficient for uniform unbiasedness over outcome functions: the bias of weighting estimators built on a calibrated score equals an average within-stratum covariance between score errors and (residualized) potential outcomes, so a perfectly calibrated score can still deliver a first-order biased estimator.
 
 **Keywords:** Average treatment effect; Double machine learning; Propensity score; Calibration; AIPW; Overlap.
+
 **JEL codes:** C14, C21, C52.
 
-A companion e-book with detailed walkthroughs of the simulation design, code, and results is available at: **[link to be added]** (rendered from `ebook/`, deployed to `docs/`).
+A companion e-book with detailed walkthroughs of the simulation design, code, and results is available at: **[https://fer-agathe.github.io/causal-ml-calib/]** (rendered from `ebook/`, deployed to `docs/`).
 
 ---
 
