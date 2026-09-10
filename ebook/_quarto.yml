@@ -22,7 +22,7 @@ book:
     orcid: 0000-0003-3740-2620
     affiliations:
       - name: Aix-Marseille School of Economics, Aix-Marseille Univ.
-  date: "8/24/2026"
+  date: "9/10/2026"
   chapters:
     - index.qmd
     - part: Monte Carlo Simulations
@@ -34,6 +34,11 @@ book:
       chapters:
       - 401k.qmd
     - references.qmd
+  navbar:
+    right:
+      - icon: github
+        href: https://github.com/fer-agathe/causal-ml-calib
+        aria-label: GitHub
 
 bibliography: biblio.bib
 
