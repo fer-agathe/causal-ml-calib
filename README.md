@@ -83,10 +83,7 @@ The working paper will be abailable soon.
 - Ewen Gallic — Aix-Marseille Univ., CNRS, AMSE
 
 ## Funding
-
-Agathe Fernandes Machado acknowledges funding from
-
-Emmanuel Flachaire and Ewen Gallic acknowledge funding from the French government under the "France 2030" investment plan managed by the French National Research Agency (reference: ANR-17-EURE-0020), and from the Excellence Initiative of Aix-Marseille University – A*MIDEX.
+Agathe Fernandes Machado acknowledges funding from OBVIA, Aix-Marseille School of Economics, Université du Québec à Montréal and the Centre de Recherches Mathématiques. Emmanuel Flachaire and Ewen Gallic acknowledge funding from the French government under the "France 2030" investment plan managed by the French National Research Agency (reference: ANR-17-EURE-0020), and from the Excellence Initiative of Aix-Marseille University – A*MIDEX.
 
 ## License
 
