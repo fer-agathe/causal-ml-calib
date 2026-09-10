@@ -194,5 +194,45 @@
     "crumbs": [
       "References"
     ]
+  },
+  {
+    "objectID": "index.html#about-this-e-book",
+    "href": "index.html#about-this-e-book",
+    "title": "Propensity Score Calibration in Causal Machine Learning",
+    "section": "About this e-book",
+    "text": "About this e-book\nThis e-book accompanies the paper “Propensity Score Calibration in Causal Machine Learning: What It Fixes, and What It Does Not” by Agathe Fernandes Machado, Arthur Charpentier, Emmanuel Flachaire, and Ewen Gallic. It documents, in a reproducible form, the data-generating process, the nuisance-function learners, the calibration methods, the causal estimators, and the Monte Carlo simulation design used in the paper, together with the code needed to reproduce every figure and table.",
+    "crumbs": [
+      "Introduction"
+    ]
+  },
+  {
+    "objectID": "index.html#abstract",
+    "href": "index.html#abstract",
+    "title": "Propensity Score Calibration in Causal Machine Learning",
+    "section": "Abstract",
+    "text": "Abstract\nA recent literature shows that recalibrating machine learning estimates of the propensity score improves double/debiased machine learning (DML) estimators of average treatment effects. This paper asks what calibration can and cannot fix, and how it compares with the weight-stabilization devices routinely used by applied econometricians. Three answers emerge from an elementary bias decomposition and a factorial Monte Carlo design.\nFirst, calibration matters for the bias only when both nuisance functions are poorly estimated (with an accurate outcome regression, double robustness protects the AIPW estimator against arbitrarily miscalibrated scores) yet it reduces the standard deviation when the propensity learner produces extreme scores.\nSecond, calibration dominates common practice under limited overlap: Hájek normalization tames the variance explosions caused by extreme scores but leaves most of the bias, whereas calibration removes both at once and without a tuning parameter, unlike trimming.\nThird, calibration is necessary but not sufficient for uniform unbiasedness over outcome functions: we show that the bias of weighting estimators built on a calibrated score equals an average {within-stratum} covariance between score errors and (residualized) potential outcomes, so a perfectly calibrated score can still deliver a first-order biased estimator. Enriching the calibration can reduce the unresolved variation within score strata, but it cannot guarantee unbiasedness uniformly unless the enriched summary is sufficiently informative to recover the true propensity score; in our simulations, outcome-informed refinements leave the residual bias essentially unchanged.\nKeywords: Average treatment effect; Double machine learning; Propensity score; Calibration; AIPW; Overlap.\nJEL codes: C14, C21, C52.",
+    "crumbs": [
+      "Introduction"
+    ]
+  },
+  {
+    "objectID": "index.html#overview-of-the-content",
+    "href": "index.html#overview-of-the-content",
+    "title": "Propensity Score Calibration in Causal Machine Learning",
+    "section": "Overview of the content",
+    "text": "Overview of the content\nData-generating process The simulation design is adapted from Belloni et al. (2017) with a modified conditional average treatment effect, used to control the difficulty of estimating the outcome regression (\\(R^2_y\\)) and the propensity score (\\(R^2_d\\)) independently.\nNuisance function estimators\n\nOutcome models (\\(g\\)): the learners used to estimate \\(\\mathbb{E}[Y \\mid D, X]\\) (OLS, Lasso, random forest, and gradient boosting (LightGBM)).\nPropensity score models (\\(m\\)): the learners used to estimate \\(\\Pr(D = 1 \\mid X)\\) (logistic regression, random forest (classification and regression variants), and gradient boosting).\n\nCalibration methods The recalibration techniques applied to the estimated propensity scores (Platt scaling, Beta calibration, and isotonic regression) along with how each is embedded within the cross-fitting procedure.\nEvaluation metrics The diagnostics used to assess nuisance-function quality and calibration performance: RMSE, Brier score, Expected Calibration Error (ECE, with uniform-width and quantile binning), and Kullback–Leibler divergence.\nCausal estimators The construction of the treatment-effect estimators compared throughout the paper: regression-based, IPW, Hájek-normalized IPW, and doubly robust AIPW.\nMonte Carlo simulation\nA Monte Carlo simulation is performed on the data generated. The nuisance learners are estimated on those data. Then, calibration of the propensity score models is assessed, and the causal estimators are estimated. In the simulation, different sample sizes and overlapping of the true probability of receiving the treatment are considered.\nEmpirical illustration: the 401(k) data A semi-synthetic experiment with a known ground-truth ATE is performed, followed by an application to the actual 401(k) eligibility data (Chernozhukov and Hansen 2004), illustrating the stability that calibration and augmentation jointly provide across machine learning pipelines.",
+    "crumbs": [
+      "Introduction"
+    ]
+  },
+  {
+    "objectID": "index.html#replication",
+    "href": "index.html#replication",
+    "title": "Propensity Score Calibration in Causal Machine Learning",
+    "section": "Replication",
+    "text": "Replication\nReplication code for the simulations and the empirical application is available on the Github repository https://github.com/fer-agathe/causal-ml-calib\n\n\n\n\nBelloni, A., V. Chernozhukov, I. Fernández-Val, and C. Hansen. 2017. “Program Evaluation and Causal Inference with High-Dimensional Data.” Econometrica 85 (1): 233–98. https://doi.org/10.3982/ecta12723.\n\n\nChernozhukov, Victor, and Christian Hansen. 2004. “The Effects of 401(k) Participation on the Wealth Distribution: An Instrumental Quantile Regression Analysis.” Review of Economics and Statistics 86 (3): 735–51. https://doi.org/10.1162/0034653041811734.",
+    "crumbs": [
+      "Introduction"
+    ]
   }
 ]

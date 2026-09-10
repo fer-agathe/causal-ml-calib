@@ -25,7 +25,27 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="site_libs/quarto-nav/quarto-nav.js"></script>
@@ -95,6 +115,35 @@ ul.task-list li input[type="checkbox"] {
 	});
 </script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -211,7 +260,13 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a>
+  <ul class="collapse">
+  <li><a href="#about-this-e-book" id="toc-about-this-e-book" class="nav-link" data-scroll-target="#about-this-e-book">About this e-book</a></li>
+  <li><a href="#abstract" id="toc-abstract" class="nav-link" data-scroll-target="#abstract">Abstract</a></li>
+  <li><a href="#overview-of-the-content" id="toc-overview-of-the-content" class="nav-link" data-scroll-target="#overview-of-the-content">Overview of the content</a></li>
+  <li><a href="#replication" id="toc-replication" class="nav-link" data-scroll-target="#replication">Replication</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -283,8 +338,48 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="introduction" class="level1 unnumbered">
 <h1 class="unnumbered">Introduction</h1>
+<section id="about-this-e-book" class="level2">
+<h2 class="anchored" data-anchor-id="about-this-e-book">About this e-book</h2>
+<p>This e-book accompanies the paper <em>“Propensity Score Calibration in Causal Machine Learning: What It Fixes, and What It Does Not”</em> by Agathe Fernandes Machado, Arthur Charpentier, Emmanuel Flachaire, and Ewen Gallic. It documents, in a reproducible form, the data-generating process, the nuisance-function learners, the calibration methods, the causal estimators, and the Monte Carlo simulation design used in the paper, together with the code needed to reproduce every figure and table.</p>
+</section>
+<section id="abstract" class="level2">
+<h2 class="anchored" data-anchor-id="abstract">Abstract</h2>
+<p>A recent literature shows that recalibrating machine learning estimates of the propensity score improves double/debiased machine learning (DML) estimators of average treatment effects. This paper asks what calibration can and cannot fix, and how it compares with the weight-stabilization devices routinely used by applied econometricians. Three answers emerge from an elementary bias decomposition and a factorial Monte Carlo design.</p>
+<p>First, calibration matters for the bias only when both nuisance functions are poorly estimated (with an accurate outcome regression, double robustness protects the AIPW estimator against arbitrarily miscalibrated scores) yet it reduces the standard deviation when the propensity learner produces extreme scores.</p>
+<p>Second, calibration dominates common practice under limited overlap: Hájek normalization tames the variance explosions caused by extreme scores but leaves most of the bias, whereas calibration removes both at once and without a tuning parameter, unlike trimming.</p>
+<p>Third, calibration is necessary but not sufficient for uniform unbiasedness over outcome functions: we show that the bias of weighting estimators built on a calibrated score equals an average {within-stratum} covariance between score errors and (residualized) potential outcomes, so a perfectly calibrated score can still deliver a first-order biased estimator. Enriching the calibration can reduce the unresolved variation within score strata, but it cannot guarantee unbiasedness uniformly unless the enriched summary is sufficiently informative to recover the true propensity score; in our simulations, outcome-informed refinements leave the residual bias essentially unchanged.</p>
+<p><strong>Keywords:</strong> Average treatment effect; Double machine learning; Propensity score; Calibration; AIPW; Overlap.</p>
+<p><strong>JEL codes:</strong> C14, C21, C52.</p>
+</section>
+<section id="overview-of-the-content" class="level2">
+<h2 class="anchored" data-anchor-id="overview-of-the-content">Overview of the content</h2>
+<p><strong>Data-generating process</strong> The simulation design is adapted from <span class="citation" data-cites="Belloni_2017_Econometrica">Belloni et al. (<a href="references.html#ref-Belloni_2017_Econometrica" role="doc-biblioref">2017</a>)</span> with a modified conditional average treatment effect, used to control the difficulty of estimating the outcome regression (<span class="math inline">\(R^2_y\)</span>) and the propensity score (<span class="math inline">\(R^2_d\)</span>) independently.</p>
+<p><strong>Nuisance function estimators</strong></p>
+<ul>
+<li><em>Outcome models (<span class="math inline">\(g\)</span>):</em> the learners used to estimate <span class="math inline">\(\mathbb{E}[Y \mid D, X]\)</span> (OLS, Lasso, random forest, and gradient boosting (LightGBM)).</li>
+<li><em>Propensity score models (<span class="math inline">\(m\)</span>):</em> the learners used to estimate <span class="math inline">\(\Pr(D = 1 \mid X)\)</span> (logistic regression, random forest (classification and regression variants), and gradient boosting).</li>
+</ul>
+<p><strong>Calibration methods</strong> The recalibration techniques applied to the estimated propensity scores (Platt scaling, Beta calibration, and isotonic regression) along with how each is embedded within the cross-fitting procedure.</p>
+<p><strong>Evaluation metrics</strong> The diagnostics used to assess nuisance-function quality and calibration performance: RMSE, Brier score, Expected Calibration Error (ECE, with uniform-width and quantile binning), and Kullback–Leibler divergence.</p>
+<p><strong>Causal estimators</strong> The construction of the treatment-effect estimators compared throughout the paper: regression-based, IPW, Hájek-normalized IPW, and doubly robust AIPW.</p>
+<p><strong>Monte Carlo simulation</strong></p>
+<p>A Monte Carlo simulation is performed on the data generated. The nuisance learners are estimated on those data. Then, calibration of the propensity score models is assessed, and the causal estimators are estimated. In the simulation, different sample sizes and overlapping of the true probability of receiving the treatment are considered.</p>
+<p><strong>Empirical illustration: the 401(k) data</strong> A semi-synthetic experiment with a known ground-truth ATE is performed, followed by an application to the actual 401(k) eligibility data <span class="citation" data-cites="Chernozhukov_2004">(<a href="references.html#ref-Chernozhukov_2004" role="doc-biblioref">Chernozhukov and Hansen 2004</a>)</span>, illustrating the stability that calibration and augmentation jointly provide across machine learning pipelines.</p>
+</section>
+<section id="replication" class="level2">
+<h2 class="anchored" data-anchor-id="replication">Replication</h2>
+<p>Replication code for the simulations and the empirical application is available on the Github repository <a href="https://github.com/fer-agathe/causal-ml-calib" class="uri">https://github.com/fer-agathe/causal-ml-calib</a></p>
 
 
+<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
+<div id="ref-Belloni_2017_Econometrica" class="csl-entry" role="listitem">
+Belloni, A., V. Chernozhukov, I. Fernández-Val, and C. Hansen. 2017. <span>“Program Evaluation and Causal Inference with High-Dimensional Data.”</span> <em>Econometrica</em> 85 (1): 233–98. <a href="https://doi.org/10.3982/ecta12723">https://doi.org/10.3982/ecta12723</a>.
+</div>
+<div id="ref-Chernozhukov_2004" class="csl-entry" role="listitem">
+Chernozhukov, Victor, and Christian Hansen. 2004. <span>“The Effects of 401(k) Participation on the Wealth Distribution: An Instrumental Quantile Regression Analysis.”</span> <em>Review of Economics and Statistics</em> 86 (3): 735–51. <a href="https://doi.org/10.1162/0034653041811734">https://doi.org/10.1162/0034653041811734</a>.
+</div>
+</div>
+</section>
 </section>
 
 </main> <!-- /main -->
