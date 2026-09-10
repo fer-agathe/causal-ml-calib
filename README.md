@@ -14,7 +14,7 @@ Replication code and companion e-book for:
 
 **JEL codes:** C14, C21, C52.
 
-A companion e-book with detailed walkthroughs of the simulation design, code, and results is available at: **[https://fer-agathe.github.io/causal-ml-calib/]** (rendered from `ebook/`, deployed to `docs/`).
+A companion e-book with detailed walkthroughs of the simulation design, code, and results is available at: **[https://fer-agathe.github.io/causal-ml-calib/](https://fer-agathe.github.io/causal-ml-calib/)** (rendered from `ebook/`, deployed to `docs/`).
 
 ---
 
