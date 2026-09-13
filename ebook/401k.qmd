@@ -2,7 +2,7 @@
 
 ## Setup and Configurations
 
-In this Chapter, we evaluate the performance of our framework using the 401(k) pension dataset from @Chernozhukov_2004, available in the {hdm} R package. This dataset allows us to examine the effect of 401(k) plan participation on net total financial assets (net_tfa).
+In this Chapter, we evaluate the performance of our framework using the 401(k) pension dataset from @Chernozhukov_2004, available in the `{hdm}` R package. This dataset allows us to examine the effect of 401(k) plan participation on net total financial assets (`net_tfa`).
 
 To test the different estimators under controlled and empirical settings, we divide our empirical study into two complementary exercises:
 
@@ -596,7 +596,7 @@ results_mc |>
 ```
 
 
-#### Figure 5 (Appendix)
+#### Figure F.1 (Appendix)
 
 ```{r}
 #| code-fold: true
@@ -915,7 +915,7 @@ real |>
   )
 ```
 
-#### Figure 4 (Appendix)
+#### Figure E.1 (Appendix)
 
 ```{r}
 #| code-fold: true
@@ -1001,7 +1001,7 @@ p_401k_calibration
 ```
 
 
-#### Figure 6 (Appendix)
+#### Figure F.2 (Appendix)
 
 
 ```{r}

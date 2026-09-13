@@ -186,7 +186,7 @@ p_hist
 
 :::{.callout-note}
 
-### Replication of Tables 1 and 5
+### Replication of Tables 1 and C.1
 
 The following codes allow to replicate content from Tables 1 and 5 in the paper.
 
