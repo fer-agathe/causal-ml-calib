@@ -424,6 +424,13 @@ for (m in names(sc)) for (cb in c("raw", "beta")) {
   p <- clip(sc[[m]][[cb]])
   est <- estimators(Y, D, p, gg$g0, gg$g1)
   ifr <- aipw_if_se(Y, D, p, gg$g0, gg$g1)
+
+  # Calibration error (quantile-binned ECE) for this model / calibration branch
+  ece <- compute_ece(scores = sc[[m]][[cb]], d = D, binning = "quantile")
+  ece_se <- boot_se(function(i)
+    compute_ece(scores = sc[[m]][[cb]][i], d = D[i], binning = "quantile"))
+
+
   se <- c(
     IPW = boot_se(function(i)
       mean(Y[i] * (D[i] / p[i] - (1 - D[i]) / (1 - p[i])))),
@@ -443,7 +450,8 @@ for (m in names(sc)) for (cb in c("raw", "beta")) {
     rows[[length(rows) + 1]] <- data.frame(
       model = m, calib = cb,
       estimator = ifelse(k == "AIPW-N", "AIPW-H", k),
-      est = est[k], se = se[k]
+      est = est[k], se = se[k],
+      ece = ece, ece_se = ece_se
     )
   }
 }

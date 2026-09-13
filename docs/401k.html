@@ -756,33 +756,41 @@ Warning
 <span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">clip</span>(sc[[m]][[cb]])</span>
 <span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>  est <span class="ot">&lt;-</span> <span class="fu">estimators</span>(Y, D, p, gg<span class="sc">$</span>g0, gg<span class="sc">$</span>g1)</span>
 <span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>  ifr <span class="ot">&lt;-</span> <span class="fu">aipw_if_se</span>(Y, D, p, gg<span class="sc">$</span>g0, gg<span class="sc">$</span>g1)</span>
-<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a>  se <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
-<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">IPW =</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i)</span>
-<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mean</span>(Y[i] <span class="sc">*</span> (D[i] <span class="sc">/</span> p[i] <span class="sc">-</span> (<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])))),</span>
-<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">IPW-N</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i) {</span>
-<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a>      w1 <span class="ot">&lt;-</span> (D[i] <span class="sc">/</span> p[i]) <span class="sc">/</span> <span class="fu">sum</span>(D[i] <span class="sc">/</span> p[i])</span>
-<span id="cb17-25"><a href="#cb17-25" aria-hidden="true" tabindex="-1"></a>      w0 <span class="ot">&lt;-</span> ((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])) <span class="sc">/</span> <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i]))</span>
-<span id="cb17-26"><a href="#cb17-26" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sum</span>(Y[i] <span class="sc">*</span> w1) <span class="sc">-</span> <span class="fu">sum</span>(Y[i] <span class="sc">*</span> w0) }),</span>
-<span id="cb17-27"><a href="#cb17-27" aria-hidden="true" tabindex="-1"></a>    <span class="at">AIPW =</span> ifr[<span class="dv">2</span>],</span>
-<span id="cb17-28"><a href="#cb17-28" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">AIPW-N</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i)</span>
-<span id="cb17-29"><a href="#cb17-29" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mean</span>(gg<span class="sc">$</span>g1[i] <span class="sc">-</span> gg<span class="sc">$</span>g0[i]) <span class="sc">+</span></span>
-<span id="cb17-30"><a href="#cb17-30" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>(D[i] <span class="sc">*</span> (Y[i] <span class="sc">-</span> gg<span class="sc">$</span>g1[i]) <span class="sc">/</span> p[i]) <span class="sc">/</span> <span class="fu">sum</span>(D[i] <span class="sc">/</span> p[i]) <span class="sc">-</span></span>
-<span id="cb17-31"><a href="#cb17-31" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">*</span> (Y[i] <span class="sc">-</span> gg<span class="sc">$</span>g0[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])) <span class="sc">/</span></span>
-<span id="cb17-32"><a href="#cb17-32" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])))</span>
-<span id="cb17-33"><a href="#cb17-33" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb17-34"><a href="#cb17-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb17-35"><a href="#cb17-35" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">names</span>(est)) {</span>
-<span id="cb17-36"><a href="#cb17-36" aria-hidden="true" tabindex="-1"></a>    rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb17-37"><a href="#cb17-37" aria-hidden="true" tabindex="-1"></a>      <span class="at">model =</span> m, <span class="at">calib =</span> cb,</span>
-<span id="cb17-38"><a href="#cb17-38" aria-hidden="true" tabindex="-1"></a>      <span class="at">estimator =</span> <span class="fu">ifelse</span>(k <span class="sc">==</span> <span class="st">"AIPW-N"</span>, <span class="st">"AIPW-H"</span>, k),</span>
-<span id="cb17-39"><a href="#cb17-39" aria-hidden="true" tabindex="-1"></a>      <span class="at">est =</span> est[k], <span class="at">se =</span> se[k]</span>
-<span id="cb17-40"><a href="#cb17-40" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb17-41"><a href="#cb17-41" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb17-42"><a href="#cb17-42" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb17-43"><a href="#cb17-43" aria-hidden="true" tabindex="-1"></a>real <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, rows) <span class="sc">|&gt;</span> tibble<span class="sc">::</span><span class="fu">as_tibble</span>()</span>
-<span id="cb17-44"><a href="#cb17-44" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb17-45"><a href="#cb17-45" aria-hidden="true" tabindex="-1"></a><span class="co"># Export results</span></span>
-<span id="cb17-46"><a href="#cb17-46" aria-hidden="true" tabindex="-1"></a><span class="fu">write_csv</span>(real, <span class="at">file =</span> <span class="fu">paste0</span>(output_dir, <span class="st">"estimates_real_pension.csv"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Calibration error (quantile-binned ECE) for this model / calibration branch</span></span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a>  ece <span class="ot">&lt;-</span> <span class="fu">compute_ece</span>(<span class="at">scores =</span> sc[[m]][[cb]], <span class="at">d =</span> D, <span class="at">binning =</span> <span class="st">"quantile"</span>)</span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a>  ece_se <span class="ot">&lt;-</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i)</span>
+<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">compute_ece</span>(<span class="at">scores =</span> sc[[m]][[cb]][i], <span class="at">d =</span> D[i], <span class="at">binning =</span> <span class="st">"quantile"</span>))</span>
+<span id="cb17-25"><a href="#cb17-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-26"><a href="#cb17-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-27"><a href="#cb17-27" aria-hidden="true" tabindex="-1"></a>  se <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb17-28"><a href="#cb17-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">IPW =</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i)</span>
+<span id="cb17-29"><a href="#cb17-29" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mean</span>(Y[i] <span class="sc">*</span> (D[i] <span class="sc">/</span> p[i] <span class="sc">-</span> (<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])))),</span>
+<span id="cb17-30"><a href="#cb17-30" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">IPW-N</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i) {</span>
+<span id="cb17-31"><a href="#cb17-31" aria-hidden="true" tabindex="-1"></a>      w1 <span class="ot">&lt;-</span> (D[i] <span class="sc">/</span> p[i]) <span class="sc">/</span> <span class="fu">sum</span>(D[i] <span class="sc">/</span> p[i])</span>
+<span id="cb17-32"><a href="#cb17-32" aria-hidden="true" tabindex="-1"></a>      w0 <span class="ot">&lt;-</span> ((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])) <span class="sc">/</span> <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i]))</span>
+<span id="cb17-33"><a href="#cb17-33" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sum</span>(Y[i] <span class="sc">*</span> w1) <span class="sc">-</span> <span class="fu">sum</span>(Y[i] <span class="sc">*</span> w0) }),</span>
+<span id="cb17-34"><a href="#cb17-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">AIPW =</span> ifr[<span class="dv">2</span>],</span>
+<span id="cb17-35"><a href="#cb17-35" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">AIPW-N</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">boot_se</span>(<span class="cf">function</span>(i)</span>
+<span id="cb17-36"><a href="#cb17-36" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mean</span>(gg<span class="sc">$</span>g1[i] <span class="sc">-</span> gg<span class="sc">$</span>g0[i]) <span class="sc">+</span></span>
+<span id="cb17-37"><a href="#cb17-37" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>(D[i] <span class="sc">*</span> (Y[i] <span class="sc">-</span> gg<span class="sc">$</span>g1[i]) <span class="sc">/</span> p[i]) <span class="sc">/</span> <span class="fu">sum</span>(D[i] <span class="sc">/</span> p[i]) <span class="sc">-</span></span>
+<span id="cb17-38"><a href="#cb17-38" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">*</span> (Y[i] <span class="sc">-</span> gg<span class="sc">$</span>g0[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])) <span class="sc">/</span></span>
+<span id="cb17-39"><a href="#cb17-39" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sum</span>((<span class="dv">1</span> <span class="sc">-</span> D[i]) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> p[i])))</span>
+<span id="cb17-40"><a href="#cb17-40" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb17-41"><a href="#cb17-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-42"><a href="#cb17-42" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">names</span>(est)) {</span>
+<span id="cb17-43"><a href="#cb17-43" aria-hidden="true" tabindex="-1"></a>    rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb17-44"><a href="#cb17-44" aria-hidden="true" tabindex="-1"></a>      <span class="at">model =</span> m, <span class="at">calib =</span> cb,</span>
+<span id="cb17-45"><a href="#cb17-45" aria-hidden="true" tabindex="-1"></a>      <span class="at">estimator =</span> <span class="fu">ifelse</span>(k <span class="sc">==</span> <span class="st">"AIPW-N"</span>, <span class="st">"AIPW-H"</span>, k),</span>
+<span id="cb17-46"><a href="#cb17-46" aria-hidden="true" tabindex="-1"></a>      <span class="at">est =</span> est[k], <span class="at">se =</span> se[k],</span>
+<span id="cb17-47"><a href="#cb17-47" aria-hidden="true" tabindex="-1"></a>      <span class="at">ece =</span> ece, <span class="at">ece_se =</span> ece_se</span>
+<span id="cb17-48"><a href="#cb17-48" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb17-49"><a href="#cb17-49" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb17-50"><a href="#cb17-50" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb17-51"><a href="#cb17-51" aria-hidden="true" tabindex="-1"></a>real <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, rows) <span class="sc">|&gt;</span> tibble<span class="sc">::</span><span class="fu">as_tibble</span>()</span>
+<span id="cb17-52"><a href="#cb17-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-53"><a href="#cb17-53" aria-hidden="true" tabindex="-1"></a><span class="co"># Export results</span></span>
+<span id="cb17-54"><a href="#cb17-54" aria-hidden="true" tabindex="-1"></a><span class="fu">write_csv</span>(real, <span class="at">file =</span> <span class="fu">paste0</span>(output_dir, <span class="st">"estimates_real_pension.csv"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 </section>
@@ -1801,11 +1809,11 @@ Figure&nbsp;4.3
 <div class="cell">
 <div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>real <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">paste0</span>(output_dir, <span class="st">"estimates_real_pension.csv"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>Rows: 24 Columns: 5
+<pre><code>Rows: 24 Columns: 7
 ── Column specification ────────────────────────────────────────────────────────
 Delimiter: ","
 chr (3): model, calib, estimator
-dbl (2): est, se
+dbl (4): est, se, ece, ece_se
 
 ℹ Use `spec()` to retrieve the full column specification for this data.
 ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
@@ -1849,6 +1857,8 @@ dbl (2): est, se
 <thead>
 <tr class="header">
 <th style="text-align: left;" data-quarto-table-cell-role="th">model</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">ece</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">ece_se</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Uncalibrated</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Hájek</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Beta-calibrated</th>
@@ -1857,20 +1867,50 @@ dbl (2): est, se
 <tbody>
 <tr class="odd">
 <td style="text-align: left;">Logit</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 <td style="text-align: left;">5.69 (3.32)</td>
-<td style="text-align: left;">5.74 (3.27)</td>
+<td style="text-align: left;">5.74 (3.04)</td>
+<td style="text-align: left;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Logit</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">NA</td>
+<td style="text-align: left;">NA</td>
 <td style="text-align: left;">8.32 (1.17)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Random forest</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">8.18 (1.14)</td>
+<td style="text-align: left;">8.33 (1.02)</td>
+<td style="text-align: left;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Random forest</td>
-<td style="text-align: left;">8.18 (1.14)</td>
-<td style="text-align: left;">8.33 (1.12)</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">NA</td>
+<td style="text-align: left;">NA</td>
 <td style="text-align: left;">8.26 (1.05)</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Boosting</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 <td style="text-align: left;">8.31 (1.41)</td>
-<td style="text-align: left;">8.5 (1.26)</td>
+<td style="text-align: left;">8.5 (1.36)</td>
+<td style="text-align: left;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Boosting</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">NA</td>
+<td style="text-align: left;">NA</td>
 <td style="text-align: left;">8.59 (1.13)</td>
 </tr>
 </tbody>
@@ -1988,6 +2028,8 @@ Figure&nbsp;4.4
 <th style="text-align: left;" data-quarto-table-cell-role="th">estimator</th>
 <th style="text-align: right;" data-quarto-table-cell-role="th">est</th>
 <th style="text-align: right;" data-quarto-table-cell-role="th">se</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">ece</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">ece_se</th>
 </tr>
 </thead>
 <tbody>
@@ -1996,7 +2038,9 @@ Figure&nbsp;4.4
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">-1.91</td>
-<td style="text-align: right;">5.91</td>
+<td style="text-align: right;">5.73</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Logit</td>
@@ -2004,6 +2048,8 @@ Figure&nbsp;4.4
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">-0.42</td>
 <td style="text-align: right;">5.44</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Logit</td>
@@ -2011,27 +2057,35 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">5.69</td>
 <td style="text-align: right;">3.32</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Logit</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">5.74</td>
-<td style="text-align: right;">3.27</td>
+<td style="text-align: right;">3.04</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Logit</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">7.53</td>
-<td style="text-align: right;">1.51</td>
+<td style="text-align: right;">1.39</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Logit</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">7.75</td>
-<td style="text-align: right;">1.26</td>
+<td style="text-align: right;">1.31</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Logit</td>
@@ -2039,27 +2093,35 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">8.32</td>
 <td style="text-align: right;">1.17</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Logit</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">8.31</td>
-<td style="text-align: right;">1.11</td>
+<td style="text-align: right;">1.23</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">8.12</td>
-<td style="text-align: right;">1.37</td>
+<td style="text-align: right;">1.27</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">5.73</td>
-<td style="text-align: right;">1.29</td>
+<td style="text-align: right;">1.25</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Random Forest</td>
@@ -2067,27 +2129,35 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">8.18</td>
 <td style="text-align: right;">1.14</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">8.33</td>
-<td style="text-align: right;">1.12</td>
+<td style="text-align: right;">1.02</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">10.25</td>
-<td style="text-align: right;">1.19</td>
+<td style="text-align: right;">1.34</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">9.73</td>
-<td style="text-align: right;">1.26</td>
+<td style="text-align: right;">1.29</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Random Forest</td>
@@ -2095,27 +2165,35 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">8.26</td>
 <td style="text-align: right;">1.05</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Random Forest</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">8.28</td>
-<td style="text-align: right;">0.99</td>
+<td style="text-align: right;">1.07</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">8.37</td>
-<td style="text-align: right;">1.72</td>
+<td style="text-align: right;">1.63</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">4.99</td>
-<td style="text-align: right;">1.41</td>
+<td style="text-align: right;">1.38</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Boosting</td>
@@ -2123,27 +2201,35 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">8.31</td>
 <td style="text-align: right;">1.41</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Uncalibrated</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">8.50</td>
-<td style="text-align: right;">1.26</td>
+<td style="text-align: right;">1.36</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW</td>
 <td style="text-align: right;">10.22</td>
-<td style="text-align: right;">1.32</td>
+<td style="text-align: right;">1.34</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">IPW (Hájek-normalized)</td>
 <td style="text-align: right;">10.26</td>
-<td style="text-align: right;">1.22</td>
+<td style="text-align: right;">1.45</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Boosting</td>
@@ -2151,13 +2237,17 @@ Figure&nbsp;4.4
 <td style="text-align: left;">AIPW</td>
 <td style="text-align: right;">8.59</td>
 <td style="text-align: right;">1.13</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Boosting</td>
 <td style="text-align: left;">Beta</td>
 <td style="text-align: left;">AIPW (Hájek-normalized)</td>
 <td style="text-align: right;">8.59</td>
-<td style="text-align: right;">1.09</td>
+<td style="text-align: right;">1.06</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;">0</td>
 </tr>
 </tbody>
 </table>

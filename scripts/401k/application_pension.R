@@ -360,9 +360,9 @@ for (m in names(sc)) for (cb in c("raw", "beta")) {
   ifr <- aipw_if_se(Y, D, p, gg$g0, gg$g1)
 
   # Calibration error (quantile-binned ECE) for this model / calibration branch
-  ece <- compute_ece(scores = sc[[m]][[cb]], d = Dr, binning = "quantile")
+  ece <- compute_ece(scores = sc[[m]][[cb]], d = D, binning = "quantile")
   ece_se <- boot_se(function(i)
-    compute_ece(scores = sc[[m]][[cb]][i], d = Dr[i], binning = "quantile"))
+    compute_ece(scores = sc[[m]][[cb]][i], d = D[i], binning = "quantile"))
 
 
   se <- c(
