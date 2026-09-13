@@ -191,7 +191,7 @@ p_hist
 The following codes allow to replicate content from Tables 1 and 5 in the paper.
 
 Table 1: Estimator = AIPW, p = 200, R2d = 0.2;
-Table 5: Estimator = AIPW, p = 20, R2d = 0.2.
+Table C.1: Estimator = AIPW, p = 20, R2d = 0.2.
 
 :::
 
